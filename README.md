@@ -1,5 +1,9 @@
 # Zetta
 
+<div align="center">
+  <img src="teaser.png" alt="Zetta Overview" width="800"/>
+</div>
+
 Zetta is A Efficient Closed-Loop Embodied Harness for Self-Evolving Physical Intelligence. It evolves code-based runtime critics and recovery skills online while keeping the base policy frozen. Through three timescale-separated loops, Zetta provides action-frequency governance, rollout-level critic-recovery proposal, and validation-gated skill updates. Together with Z-Infra, a rollout infrastructure decoupling agent logic from heterogeneous execution resources, Zetta achieves state-of-the-art success on LIBERO-Pro and RoboCasa under our current rollout budget, reaching 90.8% and 93.6%, with a 11.1x inference speedup; success continues to scale with self-exploration experience; learned skills transfer zero-shot, and clear robotic ``Aha Moments'' emerge. These results show that closed-loop harness self-evolution opens a scaling path for reliable physical intelligence.
 
 
@@ -277,3 +281,19 @@ Important campaign parameters include rollout count, logical environment slots, 
 ## Acknowledgements
 
 We gratefully acknowledge RPent for its foundational contributions. Z-Infra is coming soon.
+
+## Citation
+
+If you find Zetta useful in your research, please cite our paper:
+
+```bibtex
+@misc{ding2026zettazetaefficientclosedloop,
+      title={Zetta $\zeta$: An Efficient Closed-Loop Embodied Harness for Self-Evolving Physical Intelligence}, 
+      author={Xin Ding and Liang Mi and Mingzhe Huang and Zixuan Wang and Chao Zhang and Zixu Hao and Fu Chen and Xiangyu Li and Yikai Zheng and Yaoyu Guo and Weijun Wang and Kun Li and Hao Wu and Yunxin Liu and Ting Cao},
+      year={2026},
+      eprint={2608.16590},
+      archivePrefix={arXiv},
+      primaryClass={cs.RO},
+      url={https://arxiv.org/abs/2608.16590}, 
+}
+```
