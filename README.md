@@ -177,8 +177,7 @@ First run the contract suite that requires no simulator/model:
 python -m pytest -q \
   tests/test_evolution_protocol.py \
   tests/test_evolution_core.py \
-  tests/test_libero_eval_horizon.py \
-  tests/test_repository_hygiene.py
+  tests/test_libero_eval_horizon.py
 ```
 
 Run all currently available tests:
