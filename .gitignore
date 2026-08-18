@@ -1,0 +1,21 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Local run outputs.
+logs/
+
+# RLinf is consumed as an external checkout, not vendored here.
+/rlinf/
+/rlinf.egg-info/
+
+/resources/
+
+uv.lock
+
+# Documentation build artifacts and local environment.
+.docs-venv/
+docs/build/
+
+build/
+.claude/settings.json

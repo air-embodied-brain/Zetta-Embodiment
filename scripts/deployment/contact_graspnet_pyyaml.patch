@@ -1,0 +1,5 @@
+--- a/contact_graspnet/config_utils.py
++++ b/contact_graspnet/config_utils.py
+@@ -37 +37 @@ def load_config(checkpoint_dir, batch_size=None, max_epoch=None, data_path=None,
+-        global_config = yaml.load(f)
++        global_config = yaml.safe_load(f)

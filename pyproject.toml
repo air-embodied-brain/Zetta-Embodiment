@@ -1,0 +1,130 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rpent"
+version = "0.0.0"
+authors = [{ name = "RPent Contributors" }]
+description = "Embodied agent framework for coordinating high-level reasoning and robot skills"
+readme = {file = "README.md", content-type = "text/markdown"}
+requires-python = ">=3.10,<3.13"
+license = {file = "LICENSE"}
+keywords = [
+    "embodied-intelligence",
+    "large-language-models",
+    "agent-framework",
+]
+classifiers = [
+    #   2 - Pre-Alpha
+    #   3 - Alpha
+    #   4 - Beta
+    #   5 - Production/Stable
+    "Development Status :: 2 - Pre-Alpha",
+    "Environment :: GPU :: NVIDIA CUDA :: 12 :: 12.4",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+]
+
+dependencies = [
+    "pydantic-ai-slim[anthropic,openai]>=2.1",
+    "pydantic>=2",
+    "fastapi>=0.110",
+    "uvicorn>=0.27",
+    "httpx>=0.27",
+    "mcp>=1.27,<2",
+    "claude-agent-sdk>=0.1.60",
+    "openai-codex>=0.1.0b3",
+    "huggingface_hub>=0.24",
+    "prompt-toolkit>=3.0.48",
+    "numpy",
+    "imageio>=2.0",
+]
+
+[project.scripts]
+rpent = "rpent.cli.main:main"
+rpent-evolve = "rpent.evolution.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/RLinf/RPent"
+Repository = "https://github.com/RLinf/RPent"
+Documentation = "https://rpent.readthedocs.io/en/latest/"
+"Bug Report" = "https://github.com/RLinf/RPent/issues"
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8,<10",
+    "pytest-asyncio>=0.24,<2",
+    "omegaconf>=2.3,<3",
+    "imageio-ffmpeg>=0.5,<1",
+    "scipy>=1.10,<2",
+]
+rlinf = [
+    "rpent-rlinf",
+]
+openpi = [
+    "rlinf-openpi",
+]
+libero = [
+    "rlinf-libero",
+]
+libero-pro = [
+    "rpent-rlinf",
+    "rpent[libero]",
+    "rpent-liberopro",
+]
+libero-plus = [
+    "rpent[libero]",
+    "rlinf-liberoplus",
+]
+full = [
+    "rpent[rlinf,openpi,libero-pro,sam3]",
+]
+sam3 = [
+    "sam3==0.1.4",
+    "torch",
+    "torchvision",
+    "pillow>=10",
+]
+
+[tool.uv]
+prerelease = "allow"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["rpent*", "robots*"]
+exclude = ["tests*", "docs*", "examples*", "docker*", "toolkits*"]
+
+[tool.ruff]
+line-length = 88
+indent-width = 4
+target-version = "py311"
+
+[tool.ruff.lint]
+isort = {known-first-party = ["rpent", "robots"]}
+select = ["C", "E", "F", "I", "W", "CPY001", "RUF013", "UP006", "PERF102", "PLC1802", "PLC0208", "DOC102", "DOC202", "DOC403", "DOC502"]
+ignore = [
+    "C901", # "complex-structure"
+    "E501", # "line-too-long"
+    "E741", # "ambiguous-variable-name"
+    "D100", # "Missing docstring in public module"
+    "D104", # "Missing docstring in public package"
+    "D203", # "incorrect-blank-line-before-class", conflict with D211,
+    "D213", # "multi-line-summary-second-line", conflict with D212
+]
+fixable = ["ALL"]
+unfixable = []
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+docstring-code-format = true
+docstring-code-line-length = "dynamic"

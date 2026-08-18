@@ -1,0 +1,28 @@
+name: Unit tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  framework-contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install test dependencies
+        run: python -m pip install -e ".[test]"
+      - name: Run simulator-free contract tests
+        run: |
+          python -m pytest -q \
+            tests/test_evolution_protocol.py \
+            tests/test_evolution_core.py \
+            tests/test_libero_eval_horizon.py \
+            tests/test_repository_hygiene.py

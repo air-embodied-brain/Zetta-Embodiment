@@ -1,0 +1,15 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: "v0.15.22"
+    hooks:
+      - id: ruff
+        args: ["--preview", "--fix"]
+      - id: ruff-format
+
+  - repo: https://github.com/commit-check/commit-check
+    rev: "v2.11.1"
+    hooks: # support hooks
+    -   id: check-message  # requires commit-msg hook
+    -   id: check-author-name
+    -   id: check-author-email
+

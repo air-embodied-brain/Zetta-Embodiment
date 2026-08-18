@@ -1,0 +1,64 @@
+--- a/pointnet2/tf_ops/sampling/tf_sampling.cpp
++++ b/pointnet2/tf_ops/sampling/tf_sampling.cpp
+@@ -23,3 +23,3 @@ REGISTER_OP("ProbSample")
+     ::tensorflow::shape_inference::ShapeHandle output = c->MakeShape({c->Dim(dims2, 0), c->Dim(dims2, 1)});
+     c->set_output(0, output);
+-    return Status::OK();
++    return ::tensorflow::OkStatus();
+@@ -36,3 +36,3 @@ REGISTER_OP("FarthestPointSample")
+     ::tensorflow::shape_inference::ShapeHandle output = c->MakeShape({c->Dim(dims1, 0), npoint});
+     c->set_output(0, output);
+-    return Status::OK();
++    return ::tensorflow::OkStatus();
+@@ -50,3 +50,3 @@ REGISTER_OP("GatherPoint")
+     ::tensorflow::shape_inference::ShapeHandle output = c->MakeShape({c->Dim(dims1, 0), c->Dim(dims2, 1), c->Dim(dims1, 2)});
+     c->set_output(0, output);
+-    return Status::OK();
++    return ::tensorflow::OkStatus();
+@@ -59,4 +59,4 @@ REGISTER_OP("GatherPointGrad")
+   .SetShapeFn([](::tensorflow::shape_inference::InferenceContext* c) {
+     c->set_output(0, c->input(0));
+-    return Status::OK();
++    return ::tensorflow::OkStatus();
+   });
+--- a/pointnet2/tf_ops/grouping/tf_grouping.cpp
++++ b/pointnet2/tf_ops/grouping/tf_grouping.cpp
+@@ -26,3 +26,3 @@ REGISTER_OP("QueryBallPoint")
+         ::tensorflow::shape_inference::ShapeHandle output2 = c->MakeShape({c->Dim(dims2, 0), c->Dim(dims2, 1)});
+         c->set_output(1, output2);
+-        return Status::OK();
++        return ::tensorflow::OkStatus();
+@@ -36,3 +36,3 @@ REGISTER_OP("SelectionSort")
+         c->set_output(0, c->input(0));
+         c->set_output(1, c->input(0));
+-        return Status::OK();
++        return ::tensorflow::OkStatus();
+@@ -50,3 +50,3 @@ REGISTER_OP("GroupPoint")
+         ::tensorflow::shape_inference::ShapeHandle output = c->MakeShape({c->Dim(dims2, 0), c->Dim(dims2, 1), c->Dim(dims2, 2), c->Dim(dims1, 2)});
+         c->set_output(0, output);
+-        return Status::OK();
++        return ::tensorflow::OkStatus();
+@@ -59,4 +59,4 @@ REGISTER_OP("GroupPointGrad")
+     .SetShapeFn([](::tensorflow::shape_inference::InferenceContext* c) {
+         c->set_output(0, c->input(0));
+-        return Status::OK();
++        return ::tensorflow::OkStatus();
+     });
+--- a/pointnet2/tf_ops/3d_interpolation/tf_interpolate.cpp
++++ b/pointnet2/tf_ops/3d_interpolation/tf_interpolate.cpp
+@@ -17,3 +17,3 @@ REGISTER_OP("ThreeNN")
+         c->set_output(0, c->input(0));
+         c->set_output(1, c->input(0));
+-        return Status::OK();
++        return ::tensorflow::OkStatus();
+@@ -32,3 +32,3 @@ REGISTER_OP("ThreeInterpolate")
+         ::tensorflow::shape_inference::ShapeHandle output = c->MakeShape({c->Dim(dims1, 0), c->Dim(dims2, 1), c->Dim(dims1, 2)});
+         c->set_output(0, output);
+-        return Status::OK();
++        return ::tensorflow::OkStatus();
+@@ -42,4 +42,4 @@ REGISTER_OP("ThreeInterpolateGrad")
+     .SetShapeFn([](::tensorflow::shape_inference::InferenceContext* c) {
+         c->set_output(0, c->input(0));
+-        return Status::OK();
++        return ::tensorflow::OkStatus();
+     });
