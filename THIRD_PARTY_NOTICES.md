@@ -1,5 +1,23 @@
 # Third-Party Notices
 
+## RPent-derived agent framework code
+
+Zetta includes agent-framework and integration code adapted from the
+[RPent project](https://github.com/RLinf/RPent). The RPent source lineage is
+preserved in this repository's initial commit `df7aaa3`; commit `6709d98`
+renamed and adapted that code for Zetta. 
+
+The package migration covers the corresponding files in these paths:
+
+- `rpent/__init__.py` → `zetta/__init__.py`
+- `rpent/{cli,context,dashboard,envs,evolution,memory,planner,tools,utils}/`
+  → `zetta/{cli,context,dashboard,envs,evolution,memory,planner,tools,utils}/`
+
+The migration covers 70 former `rpent/` package files and related references
+throughout the repository. RPent-derived portions remain attributed to the
+original RPent contributors. Because the imported snapshot contains no
+explicit RPent license text, this notice records provenance only.
+
 ## RLinf-derived embodied runtime code
 
 Zetta includes selectively adapted files from the Apache-2.0 licensed
