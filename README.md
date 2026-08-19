@@ -203,7 +203,7 @@ Optional-backend tests require the corresponding dependencies; hardware/service 
 
 ## Acknowledgements
 
-We gratefully acknowledge Zetta for its foundational contributions. Z-Infra is coming soon.
+We acknowledge [RLinf](https://github.com/RLinf/RLinf)  for its prior work. See [Third-Party Notices](./THIRD_PARTY_NOTICES.md) for details.
 
 ## Citation
 
