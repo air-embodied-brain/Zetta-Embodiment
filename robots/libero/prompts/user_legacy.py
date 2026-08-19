@@ -1,6 +1,6 @@
-"""ARCHIVED legacy RPent LIBERO user prompt; intentionally unused at runtime.
+"""ARCHIVED legacy Zetta LIBERO user prompt; intentionally unused at runtime.
 
-It is retained only to reproduce historical RPent prompt behavior. The active
+It is retained only to reproduce historical Zetta prompt behavior. The active
 prompt bundle imports ``user.py``.
 """
 

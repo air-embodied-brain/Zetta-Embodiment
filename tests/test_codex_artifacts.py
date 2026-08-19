@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from rpent.planner.codex_artifacts import export_codex_stream_artifacts
+from zetta.planner.codex_artifacts import export_codex_stream_artifacts
 
 
 def _write_stream(path, records) -> None:
@@ -43,7 +43,7 @@ def test_exports_all_provider_emitted_reasoning_and_audits_stream(tmp_path):
             "payload": {
                 "item": {
                     "type": "mcpToolCall",
-                    "tool": "mcp__rpent__view_driver_state",
+                    "tool": "mcp__zetta__view_driver_state",
                 }
             },
         },

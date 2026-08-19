@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 from __future__ import annotations
 
 import hashlib
@@ -7,23 +7,23 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-import rpent.evolution.lifecycle as lifecycle
-from rpent.evolution.campaign import analyze_failures
-from rpent.evolution.jsonio import read_json
-from rpent.evolution.lifecycle import (
+import zetta.evolution.lifecycle as lifecycle
+from zetta.evolution.campaign import analyze_failures
+from zetta.evolution.jsonio import read_json
+from zetta.evolution.lifecycle import (
     _agent_artifact_index,
     resolve_agent_artifact,
     run_diagnosis_stage,
 )
-from rpent.evolution.models import (
+from zetta.evolution.models import (
     CampaignManifest,
     CausalDiagnosis,
     EpisodeRecord,
     FailureSegment,
 )
-from rpent.evolution.stages import CodexStageAgent
-from rpent.evolution.store import CampaignStore
-from rpent.tools.toolkit import Toolkit
+from zetta.evolution.stages import CodexStageAgent
+from zetta.evolution.store import CampaignStore
+from zetta.tools.toolkit import Toolkit
 
 
 def _manifest() -> CampaignManifest:
@@ -336,7 +336,7 @@ def test_stage1_receives_content_ids_not_episode_or_segment_ids(
         )
     )
     analyze_failures(root)
-    monkeypatch.setattr("rpent.evolution.lifecycle.CodexStageAgent", _CapturingAgent)
+    monkeypatch.setattr("zetta.evolution.lifecycle.CodexStageAgent", _CapturingAgent)
     run_diagnosis_stage(campaign_root=root, tool_catalog={"tools": []})
 
     seen = _CapturingAgent.seen

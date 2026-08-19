@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 """Launch many isolated persistent RoboCasa environment servers on one host."""
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 if str(REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(REPOSITORY_ROOT))
 
-from rpent.evolution.jsonio import atomic_write_json  # noqa: E402
+from zetta.evolution.jsonio import atomic_write_json  # noqa: E402
 
 
 def _health(endpoint: str, timeout_s: float = 2.0) -> dict[str, Any]:

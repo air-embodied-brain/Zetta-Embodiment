@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 from __future__ import annotations
 
 import json
@@ -376,7 +376,7 @@ def test_contact_extension_attaches_bound_sensor_to_subprocess_factory():
     install_libero_contact_extension(_LiberoEnv)
     instance = _LiberoEnv()
     env = instance.get_env_fns()[0]()
-    result = env.rpent_privileged_contacts()
+    result = env.zetta_privileged_contacts()
     assert result["available"] is True
     # Installation is idempotent.
     install_libero_contact_extension(_LiberoEnv)

@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 """Episode-local, append-only execution state for frozen recovery policies.
 
 The controller does not restore simulator state after a process crash.  It only
@@ -15,7 +15,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from rpent.evolution.jsonio import canonical_sha256
+from zetta.evolution.jsonio import canonical_sha256
 
 
 @dataclass(frozen=True, slots=True)

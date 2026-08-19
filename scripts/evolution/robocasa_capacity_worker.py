@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 """Persistent JSONL worker for the real single-GPU RoboCasa capacity ladder."""
 
 from __future__ import annotations
@@ -56,7 +56,6 @@ def main() -> int:
     parser.add_argument("--base-seed", type=int, default=43000)
     parser.add_argument("--camera-size", type=int, default=256)
     parser.add_argument("--max-steps", type=int, default=1000)
-    parser.add_argument("--gpu-operation-slots", type=int, default=2)
     parser.add_argument("--cache-root", type=Path, required=True)
     args = parser.parse_args()
 
@@ -84,9 +83,6 @@ def main() -> int:
             camera_size=args.camera_size,
             max_steps=args.max_steps,
             cold_reset_lock=str(args.cache_root / f"cold-reset-gpu-{gpu}.lock"),
-            operation_gate_root=str(args.cache_root / "operation-gates"),
-            operation_gate_gpu=gpu,
-            operation_gate_slots=args.gpu_operation_slots,
             require_isolated_renderer=True,
         )
     episode_index = 0

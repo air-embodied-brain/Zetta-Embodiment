@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from robots.libero.prompts import system as system_parts
 from robots.libero.prompts import user as user_parts
-from rpent.context.prompt_utils import Numbered, PromptNode
+from zetta.context.prompt_utils import Numbered, PromptNode
 
 
 def system_prompt() -> PromptNode:

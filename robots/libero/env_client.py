@@ -1,10 +1,10 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 """LIBERO env client that forwards calls over an RPC transport.
 
 Lives in :mod:`robots.libero` because the methods exposed
 here (``raw_obs`` / ``render_camera`` / ``cached_image`` / …)
 reference LIBERO-specific obs dict keys and camera names. The generic
-transport layer lives in :mod:`rpent.utils.socket_rpc`.
+transport layer lives in :mod:`zetta.utils.socket_rpc`.
 """
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from typing import Any
 
 import numpy as np
 
-from rpent.utils.rpc import RpcClient
+from zetta.utils.rpc import RpcClient
 
 _TIMEOUT_S = {
     "default": 30.0,

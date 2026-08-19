@@ -4,16 +4,16 @@ from pathlib import Path
 
 import pytest
 
-from rpent.evolution.lifecycle import record_gate_and_advance
-from rpent.evolution.models import (
+from zetta.evolution.lifecycle import record_gate_and_advance
+from zetta.evolution.models import (
     CampaignManifest,
     CampaignPhase,
     CandidateBundle,
     GateDecision,
 )
-from rpent.evolution.protocol import EvolutionProtocol
-from rpent.evolution.schedule import preregister_seed_schedule
-from rpent.evolution.store import CampaignStore
+from zetta.evolution.protocol import EvolutionProtocol
+from zetta.evolution.schedule import preregister_seed_schedule
+from zetta.evolution.store import CampaignStore
 
 
 def _manifest(*, heldout_mode: str, runtime_extra: dict | None = None) -> CampaignManifest:

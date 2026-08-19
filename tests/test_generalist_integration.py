@@ -10,10 +10,10 @@ from robots.libero.groot_vla_server import (
     flatten_groot_actions,
 )
 from robots.libero.tools import LiberoPrimitives, _side_by_side
-from rpent.planner.codex import _codex_mcp_config_overrides, _Recorder
-from rpent.tools.contracts import ToolContract
-from rpent.tools.toolkit import Toolkit
-from rpent.utils.sam3_client import UnavailableSam3Client
+from zetta.planner.codex import _codex_mcp_config_overrides, _Recorder
+from zetta.tools.contracts import ToolContract
+from zetta.tools.toolkit import Toolkit
+from zetta.utils.sam3_client import UnavailableSam3Client
 
 
 def _observation(z: float = 0.5) -> dict:
@@ -112,7 +112,7 @@ class GeneralistIntegrationTests(unittest.TestCase):
         recorder = _Recorder(max_turns=2)
         item = {
             "type": "mcpToolCall",
-            "tool": "mcp__rpent__move_to",
+            "tool": "mcp__zetta__move_to",
             "arguments": {"xyz": [0.0, 0.0, 0.5]},
         }
         recorder.observe({"method": "item/started", "payload": {"item": item}})

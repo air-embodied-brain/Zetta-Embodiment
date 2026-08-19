@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 """Prepare an evaluation-only LIBERO paired heldout campaign.
 
 This adapter preserves a previously preregistered seed/RNG schedule, or binds
@@ -31,18 +31,18 @@ from robots.libero.runtime_devices import (  # noqa: E402
     parse_physical_gpus,
     preregister_device_contract,
 )
-from rpent.evolution.jsonio import (  # noqa: E402
+from zetta.evolution.jsonio import (  # noqa: E402
     atomic_write_json,
     canonical_sha256,
     file_sha256,
     read_json,
 )
-from rpent.evolution.models import (  # noqa: E402
+from zetta.evolution.models import (  # noqa: E402
     CampaignManifest,
     CampaignPhase,
     CandidateBundle,
 )
-from rpent.evolution.store import CampaignStore  # noqa: E402
+from zetta.evolution.store import CampaignStore  # noqa: E402
 
 EVALUATION_SCOPE = "paired_heldout_only"
 

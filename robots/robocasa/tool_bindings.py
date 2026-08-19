@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 """Task bindings for the audited RoboCasa tool programs."""
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from robots.robocasa.tool_catalog import (
     ToolCatalog,
     ToolSpec,
 )
-from rpent.evolution.jsonio import canonical_sha256
+from zetta.evolution.jsonio import canonical_sha256
 
 @dataclass(frozen=True, slots=True)
 class TaskToolBinding:

@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 from __future__ import annotations
 
 import json
@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from rpent.evolution.trajectory import (
+from zetta.evolution.trajectory import (
     TrajectoryArtifacts,
     TrajectoryFormatError,
     index_episode_trajectory,

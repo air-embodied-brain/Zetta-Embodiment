@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 """Auditable physical-GPU isolation for LIBERO environment rollouts."""
 
 from __future__ import annotations
@@ -62,7 +62,7 @@ def describe_runtime_devices(
     )
     allowed = tuple(int(device) for device in contract["environment_gpus"])
     fallback = int(default_environment_gpu)
-    raw_worker_gpu = environment.get("RPENT_LIBERO_GPU")
+    raw_worker_gpu = environment.get("ZETTA_LIBERO_GPU")
     actual = int(raw_worker_gpu) if raw_worker_gpu is not None else fallback
     violations: list[str] = []
     if fallback not in allowed:
@@ -81,7 +81,7 @@ def describe_runtime_devices(
         **contract,
         "environment_gpu": actual,
         "environment_gpu_source": (
-            "RPENT_LIBERO_GPU" if raw_worker_gpu is not None else "--gpu"
+            "ZETTA_LIBERO_GPU" if raw_worker_gpu is not None else "--gpu"
         ),
         "default_environment_gpu": fallback,
         "vla_endpoint": str(vla_endpoint),

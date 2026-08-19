@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 from __future__ import annotations
 
 import os
@@ -40,7 +40,7 @@ def test_prepare_experiment_covers_complete_service_topologies() -> None:
         "run_robocasa_smoke",
         "prepare_libero_campaign.py",
         "prepare_robocasa_campaign.py",
-        "rpent.evolution.cli worker",
+        "zetta.evolution.cli worker",
         "run_experiment.sh",
         "stop_experiment.sh",
         "--environment-ready-manifest",
@@ -59,7 +59,7 @@ def test_prepare_experiment_covers_complete_service_topologies() -> None:
 
 def test_service_shutdown_refuses_unowned_pids() -> None:
     text = SCRIPT.read_text(encoding="utf-8")
-    assert "RPENT_EXPERIMENT_SERVICE=" in text
+    assert "ZETTA_EXPERIMENT_SERVICE=" in text
     assert "refusing to stop unowned pid" in text
     assert "kill -TERM -- \"-$pid\"" in text
     assert '[[ "$state" != Z && "$state" != X ]]' in text
@@ -87,7 +87,7 @@ def test_examples_are_secret_free_and_match_script_contract() -> None:
         ROOT / "deployment" / "experiments" / "providers.env.example"
     ).read_text(encoding="utf-8")
     assert "<provider-api-key>" in provider
-    assert "RPENT_API_PROVIDERS" in provider
+    assert "ZETTA_API_PROVIDERS" in provider
     assert "sk-" not in provider
     assert "/mnt/" not in provider
 
@@ -104,7 +104,7 @@ def test_robocasa_uses_separate_simulator_and_groot_pythons() -> None:
     assert 'groot_python=$(resolve_python "${GROOT_PYTHON:-$common_python}")' in script
     assert 'robocasa_python=$(resolve_python "${ROBOCASA_PYTHON:-$common_python}")' in script
     family_block = script.split('if [[ "$family" == libero ]]; then', 1)[1]
-    assert "export RPENT_LIBERO_GPU=" in family_block
+    assert "export ZETTA_LIBERO_GPU=" in family_block
     assert "local campaign_python=$libero_python" not in script
 
 

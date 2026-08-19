@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 """Runtime binding for a composite robosuite / LIBERO asset tree."""
 
 from __future__ import annotations
@@ -58,7 +58,7 @@ def bind_libero_assets_root(value: str | os.PathLike[str]) -> Path:
     legacy_root = assets_path.parent
     if assets_path.name != "assets":
         key = hashlib.sha256(str(assets_path).encode("utf-8")).hexdigest()[:16]
-        legacy_root = Path(tempfile.gettempdir()) / f"rpent-libero-assets-{key}"
+        legacy_root = Path(tempfile.gettempdir()) / f"zetta-libero-assets-{key}"
         legacy_root.mkdir(parents=True, exist_ok=True)
         link = legacy_root / "assets"
         if not link.exists() and not link.is_symlink():

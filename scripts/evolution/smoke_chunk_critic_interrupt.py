@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 """Verify that a frozen Critic interrupts a real server-side action chunk."""
 
 from __future__ import annotations
@@ -9,8 +9,8 @@ from pathlib import Path
 
 from robots.robocasa.env_client import RoboCasaEnvClient
 from robots.robocasa.groot_client import Gr00tClient
-from rpent.evolution.jsonio import atomic_write_json
-from rpent.evolution.models import CriticRule
+from zetta.evolution.jsonio import atomic_write_json
+from zetta.evolution.models import CriticRule
 
 
 def main() -> int:

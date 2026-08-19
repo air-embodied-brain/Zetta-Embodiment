@@ -1,0 +1,167 @@
+# 8×A100 上的 **真实链路** preset（实现计划 M4 交付物 4）。
+#
+# 与 a100_libero.yaml 的分工（§7 有记录，两份都保留）：
+#
+#   | | a100_libero.yaml | 本文件 |
+#   |---|---|---|
+#   | env    | libero（真实） | libero（真实） |
+#   | policy | **fake**       | **rlinf / openpi pi0.5（真实权重）** |
+#   | 用途   | 只验拓扑与 placement：不需要权重就能跑通 8×8 的双 group、通道容量、
+#             HybridComponentPlacement，并给出"真实 env + 零成本 policy"的对照 |
+#   | 用途   | — | M4 的验收对象：真实仿真 + 真实 VLA 的端到端与吞吐 |
+#
+# 两份的 cluster / transport / 队列容量刻意保持一致，这样两组吞吐数字相减就是
+# "GPU forward 的成本"，不掺拓扑差异。
+#
+# 权重：https://huggingface.co/RLinf/RLinf-Pi05-LIBERO-SFT
+# 用 RR_PI05_MODEL_PATH 覆盖 model_path，避免把机器路径写进仓库。
+
+env_family: libero
+env_config:
+  # 别名（suite / episode_length / image_height / image_width）也接受，见
+  # backends/rlinf_env.py::_ALIASES。这里用正式名字。
+  task_suite_name: libero_10
+  task_id: 3
+  max_episode_steps: 512
+  camera_height: 256
+  camera_width: 256
+  camera_depths: true
+  # rlinf LiberoEnv.reset 里的零动作预热是硬编码的 15 步，这里只做声明；
+  # 写成别的值会被 INVALID_ARGUMENT 拒绝，避免冻结一个不生效的参数。
+  num_steps_wait: 15
+  action_dim: 7
+  # **动作块长度（= action replan horizon），必须与 legacy 臂逐字相同**：一个 policy_step
+  # 在两条链路之间只有在这一项相等时才是同一个单位
+  # （runtime concurrency validation notes §5）。5 是 rlinf 官方对这份 checkpoint +
+  # libero_10 的评测取值（evaluations/libero/libero_10_openpi_pi05_eval.yaml:63），
+  # 也是 legacy `vla_server.py::build_model_cfg` 一直用的值。
+  # 改这一项必须同时改 `rollout_worker.policy_config.num_action_chunks`（真正决定模型
+  # 返回几行动作的是后者）与 `a100_libero.yaml`（A/B 不变量要求 env_config 逐字相同）。
+  # 历史：2026-08-07 之前是 10，因此 runtime validation notes §6.5 / §6.6 / §11.4 的数字
+  # 是 10 步/轮，与当前取值不可直接相比。
+  chunk_size: 5
+  # 分歧 4：动作预处理走 rlinf prepare_actions 的家族分支，需要知道动作是谁产的。
+  # openpi 在 libero 上是恒等变换；换 openvla_oft 时这里必须一起改（它会翻转夹爪维）。
+  action_model_type: openpi
+  # 逐帧 observation 默认不进 per_step：256×256×3 双相机 PNG × chunk_size 步会稳定越过
+  # §2.5 的 256 KiB inline 阈值。需要逐帧时才打开（等价 legacy return_all_frames）。
+  return_all_frames: false
+  libero_variant: standard
+
+cluster:
+  num_nodes: 1
+  component_placement:
+    # **只声明 rollout**。EnvWorker 是 CPU 上的 libero subproc，要的是"同一个节点上
+    # N 个进程"，这正是 NodePlacementStrategy 的语义；而 component_placement 里的
+    # placement 字符串枚举的是**硬件 rank**，写 `node_group: node` + `placement: "0"`
+    # 只会得到 1 个进程（一个节点一份硬件），env_worker.num_ranks 被静默忽略——M4 在
+    # 多 GPU 主机上实测到的真实缺陷（症状是第 2 个 create_session 就 QUOTA_EXCEEDED）。
+    # 因此 env 不进 component_placement，由 env_worker.placement_strategy=node 走
+    # NodePlacementStrategy([0] * num_ranks)。
+    # 每个 rollout rank 一张 A100（tensor_parallel_size=1，见架构文档 3.4.1）。
+    rollout:
+      placement: "0-7"
+
+gateway:
+  gateway_epoch: 1
+  maintenance_interval_seconds: 1.0
+  default_lease_seconds: 1800.0
+  error_retention_seconds: 300.0
+  result_ttl_seconds: 300.0
+  heartbeat_timeout_seconds: 60.0
+  max_concurrency_per_rank: 32
+  metrics_namespace: rr
+
+transport:
+  kind: ray_channel
+  command_queue_size: 256
+  control_queue_size: 32
+  result_queue_size: 512
+  infer_request_queue_size: 256
+  infer_response_queue_size: 256
+  # 真实 VLA 单次推理可达秒级，且 create_binding 要建 libero 子进程（更慢）。
+  # 超时只回 DEADLINE_EXCEEDED，不取消 operation（§3.1.2）。
+  command_timeout_seconds: 600.0
+
+env_worker:
+  group_name: env
+  num_ranks: 8
+  # CPU 子进程：node 策略 → NodePlacementStrategy([0] * 8)，不占卡。
+  placement_strategy: node
+  # **2 slot / rank**（M7 调大）。历史：M4 实测"一个 Ray actor 里起第 2 个 libero 子进程会崩"
+  # 并归因 EGL；M6 推翻了这个归因（真凶是 `create_binding` 并发建池的竞态，一个 actor 里因此
+  # 有 4 个而不是 2 个 libero 子进程并同时 reconfigure），修掉后一个 actor 放 2 个 slot 在两种
+  # core_form 下都通（runtime validation notes §10.6 / §10.7）；但当时只在 fake policy 与 1–2 个
+  # rollout rank 下复跑过，所以保持 1，把"满载复验"留给 M7。
+  # **M7 已复验**：8 env rank × 4 rollout rank × 16 session（= 2 slot/rank）+ **4 份真实
+  # pi0.5** 一轮 bench 全绿，12.1 policy_step/s、121.4 env-step/s、p50 1300 ms、8 个 rank
+  # 都在干活（runtime validation notes §11.4）。对比 M4 §6.6 (a) 同拓扑 1 slot/rank 的
+  # 9.1 policy_step/s，翻倍 slot 换到约 +33% 吞吐。
+  # **仍然不要直接调到 4**：那个档位只在 2 env rank（§6.11 那轮）下验过，8 rank 满载没试。
+  max_sessions_per_rank: 2
+  default_pool_size: 1
+  seed_offset: 0
+
+rollout_worker:
+  group_name: rollout
+  num_ranks: 8
+  placement_strategy: packed
+  tensor_parallel_size: 1
+  pipeline_parallel_size: 1
+  policy_id: pi05
+  policy_family: openpi
+  policy_backend: zetta_openpi
+  device: cuda
+  dtype: bfloat16
+  max_concurrent_inferences: 32
+  policy_config:
+    model_type: openpi
+    model_path: /path/to/checkpoints/RLinf-Pi05-LIBERO-SFT
+    # openpi 要求 precision 为 null，不要改。
+    precision: null
+    # 与 env_config.chunk_size 同一个数，必须一起改：这一项决定模型真正返回几行动作。
+    num_action_chunks: 5
+    action_dim: 7
+    num_steps: 5
+    use_proprio: true
+    add_value_head: false
+    default_mode: eval
+    model_version: pi05-libero-sft
+    # cuda_graph 会把 batch size 烧死（mlp_policy.py:392-437）。pi0.5 不需要它，
+    # 因此保持关闭、scheduler 走动态 batch。要开就必须同时给
+    # cuda_graph_batch_size 与 scheduler.fixed_batch_size，且两者相等。
+    enable_cuda_graph: false
+    cuda_graph_batch_size: null
+    enable_torch_compile: false
+    family_params:
+      config_name: pi05_libero
+      num_images_in_input: 2
+      noise_level: 0.5
+      train_expert_only: true
+      noise_method: flow_sde
+      value_after_vlm: false
+      value_vlm_mode: mean_token
+      detach_critic_input: null
+      use_dsrl: false
+  scheduler:
+    max_batch_size: 8
+    max_wait_ms: 20.0
+    max_queue_depth: 256
+    max_inflight_per_application: 128
+    max_inflight_per_session: 1
+    fixed_batch_size: null
+
+admission:
+  require_auth: false
+  tokens: {}
+  max_sessions_per_application: 64
+  max_inflight_operations_per_application: 256
+  max_inflight_operations_per_session: 2
+  max_total_inflight_operations: 512
+
+payload:
+  # 256×256×3 双相机 PNG 已经接近这个阈值：越阈值只累加 oversize 警告计数器，不报错。
+  # 单请求硬上限 8 MiB 不变。调阈值前先看 core/payload 的计数（§2.5）。
+  inline_threshold_bytes: 262144
+  request_limit_bytes: 8388608
+  image_codec: png

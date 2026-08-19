@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 """LIBERO toolkit: common tools + LIBERO primitives.
 
 Inherits the common file/IO tools from :class:`Toolkit` and registers the
@@ -15,9 +15,9 @@ from typing import Any
 from robots.libero import tools as libero_tools
 from robots.libero.contact_graspnet import ContactGraspNetAdapter
 from robots.libero.graspgen import GraspGenAdapter
-from rpent.tools.contracts import READ_ONLY_CONTRACT, ToolContract
-from rpent.tools.toolkit import Toolkit
-from rpent.utils.logging import get_logger, get_output_dir
+from zetta.tools.contracts import READ_ONLY_CONTRACT, ToolContract
+from zetta.tools.toolkit import Toolkit
+from zetta.utils.logging import get_logger, get_output_dir
 
 
 class LiberoToolkit(Toolkit):
@@ -214,7 +214,7 @@ class LiberoToolkit(Toolkit):
             requires_reobservation=True,
             requirements=("reachable target", "collision-aware waypoint selection"),
             notes=(
-                "RPent does not treat the RoboCasa Mink/curobo adapters as valid "
+                "Zetta does not treat the RoboCasa Mink/curobo adapters as valid "
                 "LIBERO collision or IK certificates."
             ),
         )

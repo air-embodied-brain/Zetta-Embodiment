@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 """Environment-neutral Critic features for audited LIBERO-Pro rollouts."""
 
 from __future__ import annotations
@@ -7,7 +7,7 @@ from typing import Any, Mapping, Sequence
 
 import numpy as np
 
-from rpent.evolution.models import CriticPredicate, CriticRule
+from zetta.evolution.models import CriticPredicate, CriticRule
 
 
 def critic_rules_from_payload(

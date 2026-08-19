@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 from __future__ import annotations
 
 import sys
@@ -30,7 +30,7 @@ def test_probe_requires_injected_base_url(
 ) -> None:
     api_file = tmp_path / "keys.txt"
     api_file.write_text("no keys", encoding="utf-8")
-    monkeypatch.delenv("RPENT_CHANNEL_PROBE_BASE_URL", raising=False)
+    monkeypatch.delenv("ZETTA_CHANNEL_PROBE_BASE_URL", raising=False)
     monkeypatch.setattr(sys, "argv", ["probe_api_channels.py", "--api-file", str(api_file)])
     with pytest.raises(ValueError, match="base-url"):
         main()

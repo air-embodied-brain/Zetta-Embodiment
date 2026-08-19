@@ -1,0 +1,176 @@
+# Zetta LIBERO runtime facade 的 preset（实现计划 M5）。
+#
+# 形态：**1 env rank × 1 rollout rank、ray_channel**，真实 libero + 真实 pi0.5。
+# 对应"一个 agent 一个 session"的交互式回合，是 `--runtime rollout` 的默认配置
+# （`adapters/zetta/runtime_env_client.py` / `runtime_policy_client.py`）。
+#
+# transport 默认改为 ray_channel（2026-08-08 起）：`--runtime rollout` 的 embedded 形态
+# 走 `launch/local.py::build_local_components`，worker 对象仍在本进程，但数据面换成真实
+# rlinf Channel actor（同进程起本地 Ray Cluster，见 `_build_ray_plane`）。这样单 agent
+# 场景下测的链路与多 rank 的 served/a100 preset 走同一条 transport 实现，避免"默认测
+# inproc、真正部署用 ray_channel"两条代码路径分叉；`local_ray_fake.yaml` /
+# `a100_libero_pi05.yaml` 都已经是 ray_channel。旧的纯 asyncio inproc 形态仍受支持：
+# 没有专门的 CLI 覆盖开关，需要时把本文件的 `transport.kind` 改回 `inproc`（或另存一份
+# yaml 传给 `--runtime-config`），用于排查 transport 本身是否引入开销。
+#
+# 为什么不直接用 a100_libero_pi05.yaml：那份是**吞吐验收**用的 8×8，8 个 rollout rank
+# 各加载一份 pi0.5（约 5.5 G 参数），实测 `create_sessions` 之前就要 450 s 以上
+# （runtime validation notes §8.2）。单 session 的 agent 回合只需要一张卡。
+#
+# 与 a100_libero_pi05.yaml 的关系：`env_config` / `policy_config` 逐字段照抄（只改
+# `chunk_size` 之外的拓扑与 `return_all_frames`），因此 M5 的 A/B 与 M4 的吞吐数字仍在
+# 同一组模型与仿真参数上。**注意**：本文件不参与
+# `test_the_two_a100_presets_differ_only_in_the_policy_backend` 那个 A/B 不变量
+# （那条只管两份 a100 preset），改本文件不需要同步改别的 preset。
+#
+# 权重路径用 RR_PI05_MODEL_PATH 覆盖，避免把机器路径写进仓库。
+
+env_family: libero
+env_config:
+  task_suite_name: libero_10
+  task_id: 3
+  # CLI 的 --suite / --task / --max-episode-steps 会覆盖上面三项
+  # （build_runtime_seam：实验清单冻结的任务永远压过 preset 默认值）。
+  max_episode_steps: 10000
+  camera_height: 256
+  camera_width: 256
+  camera_depths: true
+  num_steps_wait: 15
+  action_dim: 7
+  # **动作块长度（= action replan horizon）必须与 legacy 臂逐字相同**，否则一个
+  # policy_step 在两条链路之间不是同一个单位（runtime concurrency validation notes §5）。
+  # 取 5 而不是 10 的理由：5 是 rlinf 官方对这份 checkpoint + 这个 suite 的评测取值
+  # （`third_party/rlinf/evaluations/libero/libero_10_openpi_pi05_eval.yaml:63`
+  # `num_action_chunks: 5`，其 model_path 注释直指 RLinf-Pi05-LIBERO-SFT），而 legacy 的
+  # `robots/libero/vla_server.py::build_model_cfg` 自 Zetta baseline 起也一直是 5。
+  # 上游 README 说明它是论文里的 **action replan horizon**——改它会改变策略的开环长度
+  # 因而改变成功率，不是纯性能旋钮。
+  # **改这一项必须同时改 `rollout_worker.policy_config.num_action_chunks`**：真正决定
+  # 模型返回几行动作的是后者，本项只是声明（各 backend 的 chunk_step 按传入行数执行）。
+  # 历史：本文件与两份 a100 preset 在 2026-08-07 之前是 10，因此 runtime validation notes
+  # §6.5 / §6.6 / §11.4 的数字是 10 步/轮，与本文件当前取值不可直接相比。
+  chunk_size: 5
+  action_model_type: openpi
+  # **必须为 true**：legacy LiberoPrimitives._vlm_chunk 在录像开启时调
+  # chunk_step(actions, return_all_frames=True)，而正常 episode 是开着录像的
+  # （工具链要出 episode.mp4）。build_runtime_seam 也会强制打开这一项。
+  # 代价：一次 policy_step 的 StepResult 会带 chunk_size × 双相机 PNG
+  # （chunk_size=5 时约 5 × (66301 + 65142) B ≈ 0.66 MB；chunk_size=10 曾实测 1.3 MB），
+  # 仍远低于 §2.5 的 8 MiB 单请求硬上限，
+  # 且单个 payload 都在 256 KiB inline 阈值之内（oversize 计数不涨）。
+  return_all_frames: true
+  libero_variant: standard
+
+cluster:
+  num_nodes: 1
+  # 只有 1 个 env rank 与 1 个 rollout rank，不声明 component_placement 时两者都走
+  # NodePlacementStrategy([0])——单 rank 下这与显式声明 placement 等价，不会有多 rank
+  # 挤在同一张卡的问题（那个坑只在 num_ranks > 1 时才需要显式 placement，见
+  # a100_libero_pi05.yaml 的注释与 run_concurrency_ab.py 的 --mode best 分支）。
+  component_placement: {}
+
+gateway:
+  gateway_epoch: 1
+  maintenance_interval_seconds: 1.0
+  # agent 的一个回合可以跑很久（planner 思考 + 工具调用），租约要够长。
+  default_lease_seconds: 86400.0
+  error_retention_seconds: 300.0
+  result_ttl_seconds: 300.0
+  heartbeat_timeout_seconds: 3600.0
+  max_concurrency_per_rank: 4
+  metrics_namespace: rr
+
+transport:
+  kind: ray_channel
+  command_queue_size: 64
+  control_queue_size: 16
+  result_queue_size: 64
+  infer_request_queue_size: 16
+  infer_response_queue_size: 16
+  # 真实 libero 的 reconfigure + 15 步预热实测约 6 s，pi0.5 首次 forward 约 1.1 s。
+  command_timeout_seconds: 600.0
+
+env_worker:
+  group_name: env
+  num_ranks: 1
+  placement_strategy: node
+  # 一个 agent 一个 session；§8.3 那条限制（M6 已消除并改归因为建池竞态）本来就只在
+  # Ray actor 形态下出现，inproc 不适用，而这里本来
+  # 也只需要 1 个 slot。
+  max_sessions_per_rank: 1
+  default_pool_size: 1
+  seed_offset: 0
+
+rollout_worker:
+  group_name: rollout
+  num_ranks: 1
+  placement_strategy: node
+  tensor_parallel_size: 1
+  pipeline_parallel_size: 1
+  policy_id: pi05
+  policy_family: openpi
+  policy_backend: zetta_openpi
+  device: cuda
+  dtype: bfloat16
+  max_concurrent_inferences: 1
+  policy_config:
+    model_type: openpi
+    model_path: /path/to/checkpoints/RLinf-Pi05-LIBERO-SFT
+    precision: null
+    # 与 env_config.chunk_size 同一个数，必须一起改：这一项决定模型真正返回几行动作。
+    num_action_chunks: 5
+    action_dim: 7
+    num_steps: 5
+    use_proprio: true
+    add_value_head: false
+    default_mode: eval
+    model_version: pi05-libero-sft
+    enable_cuda_graph: false
+    cuda_graph_batch_size: null
+    enable_torch_compile: false
+    family_params:
+      config_name: pi05_libero
+      num_images_in_input: 2
+      noise_level: 0.5
+      train_expert_only: true
+      noise_method: flow_sde
+      value_after_vlm: false
+      value_vlm_mode: mean_token
+      detach_critic_input: null
+      use_dsrl: false
+  scheduler:
+    # 单 session 没有可合的批，攒批窗口收到 0（否则每次推理白等 max_wait_ms）。
+    max_batch_size: 1
+    max_wait_ms: 0.0
+    max_queue_depth: 16
+    max_inflight_per_application: 8
+    max_inflight_per_session: 1
+    fixed_batch_size: null
+
+admission:
+  require_auth: false
+  tokens: {}
+  max_sessions_per_application: 4
+  max_inflight_operations_per_application: 8
+  max_inflight_operations_per_session: 2
+  max_total_inflight_operations: 16
+
+payload:
+  inline_threshold_bytes: 262144
+  request_limit_bytes: 8388608
+  # **raw 而不是 png**：本 preset 是单进程内的 embedded 形态，worker 对象与 Gateway
+  # 同在一个进程（`build_local_components`），observation 走本机内存 / 本地 Ray Channel，
+  # 不经网络，PNG 压缩是**纯 CPU 浪费**。
+  # 实测（chunk 5、inproc、并发 1、真实 LIBERO 与真实 Pi0.5，各 10 轮）：
+  #   png 2.03 policy_step/s · p50 479.0 ms
+  #   raw 2.47 policy_step/s · p50 374.9 ms
+  # 即 **104 ms/policy_step、延迟 +27.8%、吞吐 −17.8%**，全部白付。
+  # （M4 在 chunk 10 上测到的是 +107 ms，见 runtime validation notes §6.5 的编码记录；该数字
+  # 是在 inproc 下量的，transport 换成 ray_channel 后编码成本对比预期同向，尚未在本
+  # preset 上单独复测。）
+  #
+  # 什么时候该用 png：**跨节点**的 served 形态——那时 PNG 用 CPU 换带宽是合理的。
+  # 同机 served（回环 TCP / Ray channel）仍应优先 raw：内存带宽比 CPU 压缩便宜。
+  # 代价：raw 的单个 payload 更大，更容易越过上面的 256 KiB inline 阈值而走 oversize
+  # 路径；同机内不产生真实传输，这个计数只是记账。
+  image_codec: raw

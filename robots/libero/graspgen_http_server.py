@@ -1,4 +1,4 @@
-"""Loopback HTTP bridge from RPent's proposal schema to GraspGen ZMQ."""
+"""Loopback HTTP bridge from Zetta's proposal schema to GraspGen ZMQ."""
 
 from __future__ import annotations
 
@@ -86,7 +86,7 @@ class GraspGenBridge:
                     payload.get("remove_outliers", False)
                 ),
                 "collision_filter_note": (
-                    "RPent separately validates current simulator contacts; this "
+                    "Zetta separately validates current simulator contacts; this "
                     "sensor-only bridge does not receive a privileged scene mesh."
                 ),
             },

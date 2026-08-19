@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 """Recoverable per-GPU operation gate for many persistent environments."""
 
 from __future__ import annotations

@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from rpent.memory.task_memory import TaskMemoryStore, build_initial_memory, canonical_sha256
+from zetta.memory.task_memory import TaskMemoryStore, build_initial_memory, canonical_sha256
 from scripts.experiments.run_batch_memory_continuation import (
     _store,
     _validate_manifest,

@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 """Shared defaults for every LIBERO-Pro evolution task."""
 
 from __future__ import annotations

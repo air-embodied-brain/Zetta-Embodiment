@@ -34,7 +34,7 @@ class ExperimentProtocolTests(unittest.TestCase):
             ),
             {
                 "CODEX_BASE_URL": "http://127.0.0.1:4101",
-                "CODEX_API_KEY": "rpent-local-adapter",
+                "CODEX_API_KEY": "zetta-local-adapter",
                 "CONTACT_GRASPNET_URL": "http://127.0.0.1:18092",
                 "GRASPGEN_URL": "http://127.0.0.1:18093",
             },
@@ -62,7 +62,7 @@ class ExperimentProtocolTests(unittest.TestCase):
                         "backend": "codex_sdk",
                         "model": "gpt-5.6-terra",
                         "reasoning_effort": "medium",
-                        "provider": "rpent_proxy",
+                        "provider": "zetta_proxy",
                     },
                 }
             ),
@@ -212,7 +212,7 @@ class ExperimentProtocolTests(unittest.TestCase):
                             "backend": "codex_sdk",
                             "model": "gpt-5.6-terra",
                             "reasoning_effort": "medium",
-                            "provider": "rpent_proxy",
+                            "provider": "zetta_proxy",
                         },
                     }
                 ),
@@ -334,7 +334,7 @@ class ExperimentProtocolTests(unittest.TestCase):
                             "backend": "codex_sdk",
                             "model": "gpt-5.6-terra",
                             "reasoning_effort": "medium",
-                            "provider": "rpent_custom",
+                            "provider": "zetta_custom",
                         },
                     }
                 ),

@@ -1,0 +1,20 @@
+[Unit]
+Description=Zetta persistent Pi0.5 inference server on GPU7
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/zetta/zetta-robot-tools
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONPATH=/opt/zetta/zetta-robot-tools
+Environment=CUDA_VISIBLE_DEVICES=7
+ExecStart=/opt/zetta/.venv-fast/bin/python robots/libero/vla_server.py --transport http --host 127.0.0.1 --port 18091 --model-path /opt/zetta/checkpoints/pi05
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=900
+KillSignal=SIGTERM
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target

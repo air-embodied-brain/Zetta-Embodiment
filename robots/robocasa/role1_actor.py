@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 """Single-writer Actor that applies only persisted Role1 decisions.
 
 The GR00T client and every proposal tool remain proposal producers.
@@ -24,7 +24,7 @@ from robots.robocasa.role1_agent import (
 )
 from robots.robocasa.tool_bindings import TaskToolBinding
 from robots.robocasa.tool_runtime import InvocationPolicy
-from rpent.evolution.jsonio import atomic_write_json, canonical_sha256
+from zetta.evolution.jsonio import atomic_write_json, canonical_sha256
 
 VLA_TOOL = "robocasa.vla.groot"
 

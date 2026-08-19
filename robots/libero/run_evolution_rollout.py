@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 # ruff: noqa: E402
 """One strict, auditable LIBERO-Pro evolution episode."""
 
@@ -57,18 +57,18 @@ from robots.robocasa.role1_agent import (
     Role1ModelAdapter,
     Role1ModelError,
 )
-from rpent.evolution.jsonio import atomic_write_json, canonical_sha256, read_json
-from rpent.evolution.models import CandidateBundle, EpisodeRecord
-from rpent.evolution.trajectory import TrajectoryArtifacts, index_episode_trajectory
-from rpent.evolution.visual_artifacts import (
+from zetta.evolution.jsonio import atomic_write_json, canonical_sha256, read_json
+from zetta.evolution.models import CandidateBundle, EpisodeRecord
+from zetta.evolution.trajectory import TrajectoryArtifacts, index_episode_trajectory
+from zetta.evolution.visual_artifacts import (
     build_episode_visual_artifacts,
     write_video_metadata,
 )
-from rpent.utils.daemon import ProcessDaemon, pick_free_port
-from rpent.utils.http_rpc import HttpRpcClient
-from rpent.utils.rpc import RpcError, wait_for_ready
-from rpent.utils.sam3_client import UnavailableSam3Client
-from rpent.utils.vla_client import VLAClient
+from zetta.utils.daemon import ProcessDaemon, pick_free_port
+from zetta.utils.http_rpc import HttpRpcClient
+from zetta.utils.rpc import RpcError, wait_for_ready
+from zetta.utils.sam3_client import UnavailableSam3Client
+from zetta.utils.vla_client import VLAClient
 
 DUMMY_ACTION = np.asarray([0.0] * 6 + [-1.0], dtype=np.float32)
 LIBERO_RECOVERY_TOOLS = LIBERO_RECOVERY_TOOL_NAMES
@@ -252,17 +252,29 @@ def _run(args: argparse.Namespace) -> EpisodeRecord:
     for path in (actions_path, states_path, chunks_path, tools_path, heartbeat):
         path.touch(exist_ok=True)
     runtime_devices_path = output / "runtime-device-assignment.json"
-    runtime_devices = describe_runtime_devices(
-        default_environment_gpu=args.gpu,
-        allowed_environment_gpus=args.allowed_environment_gpus,
-        vla_gpu=args.vla_gpu,
-        environment=os.environ,
-        vla_endpoint=args.vla_endpoint,
-    )
-    vla_rpc = HttpRpcClient(_normalize_endpoint(args.vla_endpoint))
-    _record_vla_runtime_verification(vla_rpc, runtime_devices)
-    atomic_write_json(runtime_devices_path, runtime_devices, overwrite=False)
-    require_isolated_runtime_devices(runtime_devices)
+    if args.runtime_url:
+        # GPU isolation is enforced server-side by the Runtime's placement
+        # strategy (``rollout_runtime/launch/ray_launch.py``), not by this
+        # process managing two separate subprocesses on chosen physical GPUs
+        # — the ``--vla-endpoint``/``--vla-gpu``/``--allowed-environment-gpus``
+        # contract below is specific to the direct-connect architecture.
+        atomic_write_json(
+            runtime_devices_path,
+            {"mode": "rollout_runtime", "runtime_url": args.runtime_url},
+            overwrite=False,
+        )
+    else:
+        runtime_devices = describe_runtime_devices(
+            default_environment_gpu=args.gpu,
+            allowed_environment_gpus=args.allowed_environment_gpus,
+            vla_gpu=args.vla_gpu,
+            environment=os.environ,
+            vla_endpoint=args.vla_endpoint,
+        )
+        vla_rpc = HttpRpcClient(_normalize_endpoint(args.vla_endpoint))
+        _record_vla_runtime_verification(vla_rpc, runtime_devices)
+        atomic_write_json(runtime_devices_path, runtime_devices, overwrite=False)
+        require_isolated_runtime_devices(runtime_devices)
     started_at = _now()
     started = time.time()
     episode_id = f"libero-{uuid.uuid4().hex}"
@@ -280,48 +292,56 @@ def _run(args: argparse.Namespace) -> EpisodeRecord:
     if bundle is not None and args.role1_planner == "none":
         raise ValueError("candidate bundle requires a Role1 planner")
 
-    gpu = int(runtime_devices["environment_gpu"])
-    port = pick_free_port()
     max_episode_steps = int(horizon_contract["max_episode_steps"])
-    env_vars = _frozen_subprocess_environment(os.environ.copy())
-    env_vars.update(
-        {
-            "LIBERO_TYPE": "pro",
-            "MUJOCO_GL": "egl",
-            "PYOPENGL_PLATFORM": "egl",
-            "ROBOT_PLATFORM": "LIBERO",
-        }
-    )
-    env_vars.pop("CUDA_VISIBLE_DEVICES", None)
-    daemon = ProcessDaemon(
-        name=f"libero-{args.logical_id}",
-        cmd=[
-            sys.executable,
-            str(Path(__file__).with_name("env_server.py")),
-            "--suite",
-            args.suite,
-            "--task",
-            str(args.task_id),
-            "--seed",
-            str(args.seed),
-            "--max-episode-steps",
-            str(max_episode_steps),
-            "--transport",
-            "http",
-            "--host",
-            "127.0.0.1",
-            "--port",
-            str(port),
-            "--parent-watch",
-            "--cuda-device",
-            str(gpu),
-        ],
-        env=env_vars,
-        log_path=str(output / "env_server.log"),
-        cwd=str(Path(__file__).resolve().parents[2]),
-    )
+    critic_rules = [rule.as_dict() for rule in bundle.critic_rules] if bundle else []
+    runtime_session_id = None
+    runtime_client = None
+    runtime_loop = None
+    daemon = None
+    if args.runtime_url:
+        port = None
+    else:
+        gpu = int(runtime_devices["environment_gpu"])
+        port = pick_free_port()
+        env_vars = _frozen_subprocess_environment(os.environ.copy())
+        env_vars.update(
+            {
+                "LIBERO_TYPE": "pro",
+                "MUJOCO_GL": "egl",
+                "PYOPENGL_PLATFORM": "egl",
+                "ROBOT_PLATFORM": "LIBERO",
+            }
+        )
+        env_vars.pop("CUDA_VISIBLE_DEVICES", None)
+        daemon = ProcessDaemon(
+            name=f"libero-{args.logical_id}",
+            cmd=[
+                sys.executable,
+                str(Path(__file__).with_name("env_server.py")),
+                "--suite",
+                args.suite,
+                "--task",
+                str(args.task_id),
+                "--seed",
+                str(args.seed),
+                "--max-episode-steps",
+                str(max_episode_steps),
+                "--transport",
+                "http",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                str(port),
+                "--parent-watch",
+                "--cuda-device",
+                str(gpu),
+            ],
+            env=env_vars,
+            log_path=str(output / "env_server.log"),
+            cwd=str(Path(__file__).resolve().parents[2]),
+        )
     primitives: LiberoPrimitives | None = None
-    env: LiberoEnvClient | None = None
+    env: LiberoEnvClient | Any = None
     method_failure = False
     role1_decisions = 0
     chunks = 0
@@ -329,7 +349,14 @@ def _run(args: argparse.Namespace) -> EpisodeRecord:
 
     def flush_audit_trace() -> None:
         nonlocal last_audit_step
-        if env is None:
+        if env is None or not hasattr(env, "audit_trace"):
+            # The Runtime path (``--runtime-url``) has no ``libero.audit_trace``
+            # extension: every step already flows through ``action_step``, so
+            # ``actions.jsonl``/``states.jsonl`` are appended directly at each
+            # ``chunk_step``/``step`` call site below instead of being
+            # reconstructed from a separate audit ledger read. See
+            # ``rollout_runtime/adapters/zetta/runtime_env_client.py``'s module
+            # docstring for why this extension does not exist server-side.
             return
         for row in env.audit_trace(since_step=last_audit_step):
             _append_jsonl(
@@ -344,30 +371,105 @@ def _run(args: argparse.Namespace) -> EpisodeRecord:
             last_audit_step = max(last_audit_step, int(row["step_index"]))
 
     try:
-        daemon.start()
-        env_rpc = HttpRpcClient(f"http://127.0.0.1:{port}")
-        wait_for_ready(env_rpc, daemon=daemon, timeout_s=300.0)
-        env = LiberoEnvClient(
-            env_rpc,
-            expected_meta={
-                "suite": args.suite,
-                "task": args.task_id,
-                "seed": args.seed,
-                "max_episode_steps": max_episode_steps,
-            },
-            return_all_frames=True,
-        )
-        model = VLAClient(vla_rpc)
+        if args.runtime_url:
+            from rollout_runtime.adapters.zetta.runtime_env_client import (
+                LiberoRuntimeEnvClient,
+                RuntimeOperationError,
+                SyncRuntimeLoop,
+            )
+            from rollout_runtime.adapters.zetta.runtime_policy_client import (
+                LiberoRuntimeVLAClient,
+            )
+            from rollout_runtime.api.messages import CreateSessionRequest, EnvSpecMsg
+            from rollout_runtime.api.result import Err
+            from rollout_runtime.serve.client import RemoteRuntimeClient
+
+            runtime_loop = SyncRuntimeLoop()
+            runtime_client = RemoteRuntimeClient(
+                args.runtime_url,
+                token=args.runtime_token,
+                operation_timeout_s=args.operation_timeout_s,
+                session_timeout_s=args.session_timeout_s,
+            )
+            create_results = runtime_loop.run(
+                runtime_client.create_sessions(
+                    [
+                        CreateSessionRequest(
+                            application_id="zetta-libero",
+                            client_session_key=(
+                                f"{args.logical_id}-attempt-{args.attempt_index}"
+                            ),
+                            env_spec=EnvSpecMsg(
+                                env_family="libero",
+                                env_config={
+                                    "task_suite_name": args.suite,
+                                    "task_id": args.task_id,
+                                    "max_episode_steps": max_episode_steps,
+                                    "libero_variant": "pro",
+                                },
+                                pool_size=1,
+                                resource_hints={"accelerator": True},
+                            ),
+                            default_policy_id=args.policy_id,
+                            lease_seconds=float(args.session_lease_s),
+                            metadata={
+                                "task": args.suite,
+                                "seed": int(args.seed),
+                                "generation": int(args.generation),
+                                "logical_id": args.logical_id,
+                            },
+                        )
+                    ]
+                )
+            )
+            create_result = create_results[0]
+            if isinstance(create_result, Err):
+                info = create_result.error
+                raise RuntimeOperationError(
+                    f"runtime create_sessions failed: {info.code.name}: {info.message}"
+                )
+            runtime_session_id = create_result.value.session_id
+            env = LiberoRuntimeEnvClient(
+                runtime_client,
+                runtime_session_id,
+                loop=runtime_loop,
+                return_all_frames=True,
+            )
+            model = LiberoRuntimeVLAClient(
+                runtime_client,
+                runtime_session_id,
+                loop=runtime_loop,
+                policy_id=args.policy_id,
+            )
+        else:
+            daemon.start()
+            env_rpc = HttpRpcClient(f"http://127.0.0.1:{port}")
+            wait_for_ready(env_rpc, daemon=daemon, timeout_s=300.0)
+            env = LiberoEnvClient(
+                env_rpc,
+                expected_meta={
+                    "suite": args.suite,
+                    "task": args.task_id,
+                    "seed": args.seed,
+                    "max_episode_steps": max_episode_steps,
+                },
+                return_all_frames=True,
+            )
+            model = VLAClient(vla_rpc)
         primitives = LiberoPrimitives(
             env,
             model,
             UnavailableSam3Client("evolution rollout does not use segmentation"),
             allow_privileged_actions=privileged_evidence_enabled(args),
         )
-        obs, _ = env.reset()
+        if args.runtime_url:
+            obs, _ = env.reset(
+                task_id=args.task_id, seed=args.seed, critic_rules=critic_rules
+            )
+        else:
+            obs, _ = env.reset()
         primitives.set_obs(obs)
         primitives.configure_policy_rng(args.policy_rng)
-        critic_rules = [rule.as_dict() for rule in bundle.critic_rules] if bundle else []
         primitives.configure_critic(critic_rules)
         task_language = _require_expected_task_language(
             env.get_task_language(), getattr(args, "expected_task_language", None)
@@ -417,7 +519,7 @@ def _run(args: argparse.Namespace) -> EpisodeRecord:
                 planner_type=args.role1_planner,
                 model=args.role1_model,
                 reasoning_effort=args.reasoning_effort,
-                base_url=os.environ.get("RPENT_ROLE1_BASE_URL"),
+                base_url=os.environ.get("ZETTA_ROLE1_BASE_URL"),
                 max_tokens=args.role1_max_tokens,
                 timeout_s=args.role1_timeout_s,
                 max_turns=args.role1_max_turns,
@@ -753,8 +855,19 @@ def _run(args: argparse.Namespace) -> EpisodeRecord:
                 primitives.stop_recording_and_save(
                     str(output / "videos" / "partial_agentview.mp4"), fps=10
                 )
-        with contextlib.suppress(Exception):
-            daemon.stop()
+        if args.runtime_url:
+            if runtime_session_id is not None and runtime_client is not None:
+                with contextlib.suppress(Exception):
+                    runtime_loop.run(runtime_client.close_sessions([runtime_session_id]))
+            if runtime_client is not None:
+                with contextlib.suppress(Exception):
+                    runtime_loop.run(runtime_client.aclose())
+            if runtime_loop is not None:
+                with contextlib.suppress(Exception):
+                    runtime_loop.close()
+        else:
+            with contextlib.suppress(Exception):
+                daemon.stop()
 
 
 def main() -> int:
@@ -778,14 +891,65 @@ def main() -> int:
         "--expected-task-language",
         help="fail closed if the live LIBERO task language differs after reset",
     )
-    parser.add_argument("--vla-endpoint", required=True)
-    parser.add_argument("--vla-gpu", type=int, required=True)
+    parser.add_argument(
+        "--runtime-url",
+        default=None,
+        help=(
+            "Base URL of a shared rollout-runtime serve process "
+            "(rollout_runtime.cli serve --launch ray). When set, this episode "
+            "connects to that Runtime instead of spawning a standalone "
+            "env_server.py/vla_server.py subprocess pair, and "
+            "--vla-endpoint/--vla-gpu/--allowed-environment-gpus are not used."
+        ),
+    )
+    parser.add_argument(
+        "--runtime-token",
+        default=os.environ.get("ZETTA_RUNTIME_TOKEN"),
+        help="Bearer token for the runtime; defaults to ZETTA_RUNTIME_TOKEN.",
+    )
+    parser.add_argument(
+        "--policy-id",
+        default="pi05",
+        help="Policy id served by the runtime's RolloutWorker (--runtime-url only).",
+    )
+    parser.add_argument(
+        "--session-lease-s",
+        type=float,
+        default=1800.0,
+        help="Requested runtime session lease (--runtime-url only).",
+    )
+    parser.add_argument(
+        "--operation-timeout-s",
+        type=float,
+        default=900.0,
+        help="Read timeout for runtime reset/action_step/policy_infer calls.",
+    )
+    parser.add_argument(
+        "--session-timeout-s",
+        type=float,
+        default=1800.0,
+        help="Read timeout for runtime create_sessions (may cold-start a pool).",
+    )
+    parser.add_argument(
+        "--vla-endpoint",
+        default=None,
+        help="Pi0.5 VLA server URL (direct-connect mode; ignored with --runtime-url).",
+    )
+    parser.add_argument(
+        "--vla-gpu",
+        type=int,
+        default=None,
+        help="Physical GPU for the VLA server (direct-connect mode only).",
+    )
     parser.add_argument("--gpu", type=int, default=0)
     parser.add_argument(
         "--allowed-environment-gpus",
         type=parse_physical_gpus,
-        required=True,
-        help="comma-separated preregistered physical GPUs for LIBERO EGL workers",
+        default=None,
+        help=(
+            "comma-separated preregistered physical GPUs for LIBERO EGL workers "
+            "(direct-connect mode only)"
+        ),
     )
     parser.add_argument(
         "--max-actions",
@@ -827,8 +991,23 @@ def main() -> int:
     )
     parser.add_argument("--max-recovery-actor-calls", type=int, default=16)
     args = parser.parse_args()
-    if args.role1_model != "gpt-5.6-sol" or args.reasoning_effort != "high":
-        parser.error("formal Role1 is frozen to gpt-5.6-sol with reasoning_effort=high")
+    if args.runtime_url:
+        if args.vla_endpoint or args.vla_gpu is not None or args.allowed_environment_gpus:
+            parser.error(
+                "--runtime-url is exclusive with --vla-endpoint/--vla-gpu/"
+                "--allowed-environment-gpus (direct-connect-only options)"
+            )
+    else:
+        if not args.vla_endpoint or args.vla_gpu is None or not args.allowed_environment_gpus:
+            parser.error(
+                "--vla-endpoint, --vla-gpu, and --allowed-environment-gpus are "
+                "required unless --runtime-url is set"
+            )
+    if args.role1_model not in ("gpt-5.6-sol", "gpt-5.6-luna") or args.reasoning_effort != "high":
+        parser.error(
+            "formal Role1 is frozen to gpt-5.6-sol or gpt-5.6-luna with "
+            "reasoning_effort=high"
+        )
     if args.role1_heartbeat_s <= 0 or args.max_recovery_actor_calls < 1:
         parser.error("Role1 heartbeat and Recovery call limit must be positive")
     result_file = Path(args.result_file)

@@ -1,11 +1,11 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
-from rpent.planner.codex import PROVIDER_ENV_KEY, CodexPlanner
-from rpent.planner.provider_pool import PROVIDERS_ENV
+from zetta.planner.codex import PROVIDER_ENV_KEY, CodexPlanner
+from zetta.planner.provider_pool import PROVIDERS_ENV
 
 
 def test_codex_uses_external_broker_instead_of_per_solve_proxy(
@@ -26,9 +26,9 @@ def test_codex_uses_external_broker_instead_of_per_solve_proxy(
         ),
     )
     monkeypatch.setenv(
-        "RPENT_API_PROVIDER_BROKER_URL", "http://127.0.0.1:4110"
+        "ZETTA_API_PROVIDER_BROKER_URL", "http://127.0.0.1:4110"
     )
-    monkeypatch.setenv("RPENT_API_PROVIDER_BROKER_API_KEY", "local-broker-key")
+    monkeypatch.setenv("ZETTA_API_PROVIDER_BROKER_API_KEY", "local-broker-key")
     planner = CodexPlanner(
         output_dir=str(tmp_path),
         model="gpt-5.6-sol",
@@ -41,7 +41,7 @@ def test_codex_uses_external_broker_instead_of_per_solve_proxy(
     )
     config = planner._build_config("http://127.0.0.1:9999")
     overrides = "\n".join(config.config_overrides)
-    assert 'model_providers.rpent_proxy.base_url="http://127.0.0.1:4110/v1"' in overrides
+    assert 'model_providers.zetta_proxy.base_url="http://127.0.0.1:4110/v1"' in overrides
     assert 'model_reasoning_effort="high"' in overrides
     assert config.env[PROVIDER_ENV_KEY] == "local-broker-key"
     assert "upstream-secret" not in overrides

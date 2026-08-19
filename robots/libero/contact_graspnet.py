@@ -1,4 +1,4 @@
-"""Proposal-only Contact-GraspNet adapter for RPent LIBERO observations."""
+"""Proposal-only Contact-GraspNet adapter for Zetta LIBERO observations."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from typing import Any
 
 import numpy as np
 
-from rpent.utils.logging import get_output_dir
+from zetta.utils.logging import get_output_dir
 
 
 def _quaternion_xyzw(rotation: np.ndarray) -> list[float]:
@@ -131,7 +131,7 @@ def transform_grasp_candidates(
 
 
 class ContactGraspNetAdapter:
-    """Turn RPent metric depth into bounded, auditable grasp proposals."""
+    """Turn Zetta metric depth into bounded, auditable grasp proposals."""
 
     def __init__(self, endpoint: str | None = None) -> None:
         self.endpoint = (endpoint or os.environ.get("CONTACT_GRASPNET_URL", "")).rstrip(

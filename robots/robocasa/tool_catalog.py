@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 """RoboCasa tool declarations implemented in this repository.
 
 A tool declaration never grants ownership of the simulator: control tools only
@@ -214,19 +214,19 @@ def build_robocasa_tool_catalog() -> ToolCatalog:
         _service(
             "robocasa.perception.grounded_sam2",
             "Propose open-vocabulary detections and masks from an RGB image.",
-            "RPENT_ROBOCASA_GROUNDED_SAM2_URL",
+            "ZETTA_ROBOCASA_GROUNDED_SAM2_URL",
             "perception.open_vocabulary_segmentation",
         ),
         _service(
             "robocasa.perception.depth_anything_v2",
             "Predict scale-ambiguous relative depth for diagnosis, not metric control.",
-            "RPENT_ROBOCASA_DEPTH_ANYTHING_V2_URL",
+            "ZETTA_ROBOCASA_DEPTH_ANYTHING_V2_URL",
             "perception.relative_depth",
         ),
         _service(
             "robocasa.grasp.contact_graspnet",
             "Propose 6D grasps from a camera-frame point cloud.",
-            "RPENT_ROBOCASA_CONTACT_GRASPNET_URL",
+            "ZETTA_ROBOCASA_CONTACT_GRASPNET_URL",
             "grasp.propose_6d",
             "perception.grasp_proposal",
             risk="high",
@@ -234,7 +234,7 @@ def build_robocasa_tool_catalog() -> ToolCatalog:
         _service(
             "robocasa.grasp.graspgen",
             "Generate and filter 6D grasp proposals from privileged object geometry.",
-            "RPENT_ROBOCASA_GRASPGEN_URL",
+            "ZETTA_ROBOCASA_GRASPGEN_URL",
             "perception.grasp_proposal",
             "geometry.point_cloud",
             risk="high",
@@ -313,7 +313,7 @@ def build_robocasa_tool_catalog() -> ToolCatalog:
         _service(
             "robocasa.vla.groot",
             "Propose a language-conditioned GR00T action chunk from three camera views.",
-            "RPENT_ROBOCASA_GROOT_URL",
+            "ZETTA_ROBOCASA_GROOT_URL",
             "vision",
             "language_conditioning",
             "continuous_control",
@@ -348,7 +348,7 @@ def build_robocasa_tool_catalog() -> ToolCatalog:
         _service(
             "robocasa.motion.mink_reach",
             "Propose a constrained local IK reach action with collision evidence.",
-            "RPENT_ROBOCASA_MINK_URL",
+            "ZETTA_ROBOCASA_MINK_URL",
             "motion.pose_reach",
             "motion.constrained_ik",
             "motion.collision_aware_local",
@@ -364,7 +364,7 @@ def build_robocasa_tool_catalog() -> ToolCatalog:
         _service(
             "robocasa.motion.curobo_reachability",
             "Evaluate collision-aware IK reachability without executing motion.",
-            "RPENT_ROBOCASA_CUROBO_REACHABILITY_URL",
+            "ZETTA_ROBOCASA_CUROBO_REACHABILITY_URL",
             "motion.pose_reachability",
             "motion.constrained_ik",
             "motion.collision_aware_local",
@@ -374,7 +374,7 @@ def build_robocasa_tool_catalog() -> ToolCatalog:
         _service(
             "robocasa.motion.curobo_motiongen_pregrasp",
             "Propose an isolated collision-aware pregrasp trajectory; never execute it.",
-            "RPENT_ROBOCASA_CUROBO_MOTIONGEN_URL",
+            "ZETTA_ROBOCASA_CUROBO_MOTIONGEN_URL",
             "motion.pregrasp_trajectory",
             "motion.collision_aware_global",
             risk="high",

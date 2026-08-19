@@ -1,0 +1,160 @@
+# LIBERO-PRO + Pi0.5 单卡 preset，DynamicSlotPool 并发扩缩容变体：
+# 一份服务同时覆盖并发 1..4，不需要按并发档位重启换 preset（对照
+# `a100_libero_pi05_pro.yaml` = 8 env rank × 2 slot 的固定池吞吐 preset）。
+#
+# 为什么现在可以合并成一份：`LiberoEnvCore`（`core_form=per_slot`）已经实现
+# `DynamicSlotPool` 协议（`add_slot`/`remove_slot`/`slot_count`，见
+# `rollout_runtime/backends/rlinf_env.py`），`build()` 按
+# `EnvSpecMsg.effective_max_pool_size()`（不是初始 `num_envs`）声明
+# `total_num_processes`，`add_slot` 因此在 `[0, total_num_processes)` 里总能挑到一个
+# 空闲的进程偏移；`EnvPool.acquire_or_grow` 于是能在池满时按需追加一个 slot，而不是
+# 直接 `QUOTA_EXCEEDED`（`rollout_runtime/workers/env_worker.py::EnvPool.dynamic`）。
+#
+# 客户端只需要在 `scripts/experiments/libero_critic_recovery_latency_v3.py`（或其他
+# served 客户端）上把 `--env-pool-size` 固定为 1、把 `--env-max-pool-size` 设成当次
+# 想跑的并发目标（1/2/4 均可，同一个服务不重启）：`EnvSpecMsg.max_dynamic_pool_size`
+# 不进 pool digest（见 `api/messages.py`），只要 `--env-pool-size` 恒为 1，所有并发
+# 档位打到的都是同一个池。
+#
+# `env_worker.max_sessions_per_rank` 才是动态扩容的真实硬上限（served 模式下
+# `ServeLimits.max_pool_size` 缺省取这个字段，`serve/app.py::_with_identity` 会把
+# 客户端声明的 `pool_size`/`max_dynamic_pool_size` 都 clamp 到它）——本 preset 把它
+# 设成 4（覆盖 1/2/4/8 并发对比实验里 <=max 的最高档位；8 这一档位刻意大于上限，
+# 用来验证"超过 max 之后是排队还是失败"，预期第 5 个并发起 QUOTA_EXCEEDED），
+# `default_pool_size` 则设成 1（服务启动时只冷启 1 个 slot，不是一次性建 4 个—— 与
+# 已确认过的"一次性并发冷启动多个 slot 会有 EGL/MuJoCo 崩溃风险"教训不冲突：
+# `EnvPool.acquire_or_grow` 在 `_state_lock` 保护下逐个串行 `core.add_slot`，同一时刻
+# 只有一个 slot 在冷启动）。
+#
+# LIBERO-PRO 不支持 `core_form=lockstep_vector`（向量环境无法单独停一条 lane，
+# PRO/PLUS 在任务终止后再 step 会抛错，见 `rlinf_env.py` 的 `build()` 注释）。本文件
+# 不写 `core_form`，落到家族默认值 `per_slot`，这正是动态扩容协议要求的形态、也是
+# PRO 唯一支持的形态。
+#
+# 权重：https://huggingface.co/RLinf/RLinf-Pi05-LIBERO-SFT。部署时用
+# RR_PI05_MODEL_PATH 覆盖下面的占位路径。
+
+env_family: libero
+env_config:
+  task_suite_name: libero_goal_swap
+  task_id: 0
+  max_episode_steps: 310
+  camera_height: 256
+  camera_width: 256
+  camera_depths: true
+  num_steps_wait: 15
+  action_dim: 7
+  chunk_size: 5
+  action_model_type: openpi
+  return_all_frames: true
+  libero_variant: pro
+
+cluster:
+  num_nodes: 1
+  # 强制部署决策（docs/reference/RUNTIME_V3_VS_MAIN_TEST_PLAN.md §0.1）：v3 分支
+  # 统一使用 `--launch ray`，不使用 `--launch local`——后者把 EnvWorker（MuJoCo/EGL
+  # 渲染）与 RolloutWorker（policy 推理）挤进同一进程/同一个共享线程池，历史实测
+  # 基础设施失败率远高于每者独立 Ray 进程的形态（该文档记录的是 RoboCasa 家族，但
+  # 结论对 LIBERO 同样适用：两者都是 MuJoCo/EGL 渲染 + `asyncio.to_thread` 卸载阻塞
+  # 调用的同一套 v3 runtime 骨架，风险来自骨架层不是家族层）。`--launch ray` 的
+  # `packed` 放置策略要求 `component_placement` 非空，否则启动时报错
+  # （`rollout_runtime/launch/ray_launch.py::_placement_for`），因此这里显式声明。
+  #
+  # 注意：这里的 "0" 是 **Ray rank 索引**，不是物理 GPU 编号——只声明了 1 个 env
+  # rank + 1 个 rollout rank（见下 env_worker/rollout_worker.num_ranks），可用 rank
+  # 范围就是 [0]，写别的数字会在 rlinf 的 `HybridComponentPlacement` 里直接
+  # AssertionError（"Start rank N ... must be within the available Node ranks
+  # [0]"）。真正选中哪张物理卡，由**启动服务前**设置的 `CUDA_VISIBLE_DEVICES`
+  # 环境变量决定（收窄成两张目标卡后，rank 0 落到可见列表第一张）——与
+  # `libero_critic_recovery_latency_v3.py` in-process 模式的 GPU 隔离手段是同一套
+  # 逻辑，只是这里挪到了 serve 进程启动脚本里。
+  component_placement:
+    env:     {node_group: node, placement: "0"}
+    rollout: {placement: "0"}
+
+gateway:
+  gateway_epoch: 1
+  maintenance_interval_seconds: 1.0
+  default_lease_seconds: 1800.0
+  error_retention_seconds: 300.0
+  result_ttl_seconds: 300.0
+  heartbeat_timeout_seconds: 60.0
+  heartbeat_interval_seconds: 10.0
+  max_concurrency_per_rank: 8
+  metrics_namespace: rr
+
+transport:
+  kind: ray_channel
+  command_queue_size: 128
+  control_queue_size: 32
+  result_queue_size: 128
+  infer_request_queue_size: 32
+  infer_response_queue_size: 32
+  command_timeout_seconds: 600.0
+
+env_worker:
+  group_name: env
+  num_ranks: 1
+  placement_strategy: packed
+  # 动态扩容上限（served 模式下 ServeLimits.max_pool_size 的缺省来源，见文件头注释）。
+  max_sessions_per_rank: 4
+  # 启动时只冷启 1 个 slot；1->4 的其余 3 个由 add_slot 按需逐个追加。
+  default_pool_size: 1
+  seed_offset: 0
+
+rollout_worker:
+  group_name: rollout
+  num_ranks: 1
+  placement_strategy: packed
+  tensor_parallel_size: 1
+  pipeline_parallel_size: 1
+  policy_id: pi05
+  policy_family: openpi
+  policy_backend: zetta_openpi
+  device: cuda
+  dtype: bfloat16
+  max_concurrent_inferences: 8
+  policy_config:
+    model_type: openpi
+    model_path: /path/to/checkpoints/RLinf-Pi05-LIBERO-SFT
+    precision: null
+    num_action_chunks: 5
+    action_dim: 7
+    num_steps: 5
+    use_proprio: true
+    add_value_head: false
+    default_mode: eval
+    model_version: pi05-libero-sft
+    enable_cuda_graph: false
+    cuda_graph_batch_size: null
+    enable_torch_compile: false
+    family_params:
+      config_name: pi05_libero
+      num_images_in_input: 2
+      noise_level: 0.5
+      train_expert_only: true
+      noise_method: flow_sde
+      value_after_vlm: false
+      value_vlm_mode: mean_token
+      detach_critic_input: null
+      use_dsrl: false
+  scheduler:
+    max_batch_size: 4
+    max_wait_ms: 20.0
+    max_queue_depth: 32
+    max_inflight_per_application: 16
+    max_inflight_per_session: 1
+    fixed_batch_size: null
+
+admission:
+  require_auth: false
+  tokens: {}
+  max_sessions_per_application: 8
+  max_inflight_operations_per_application: 16
+  max_inflight_operations_per_session: 2
+  max_total_inflight_operations: 32
+
+payload:
+  inline_threshold_bytes: 262144
+  request_limit_bytes: 8388608
+  image_codec: png

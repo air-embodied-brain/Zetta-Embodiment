@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 from __future__ import annotations
 
 import json
@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from rpent.evolution.jsonio import atomic_write_json
-from rpent.evolution.queue import RolloutJob, SharedHostQueue
-from rpent.evolution.slot_broker import EnvironmentSlotBroker
+from zetta.evolution.jsonio import atomic_write_json
+from zetta.evolution.queue import RolloutJob, SharedHostQueue
+from zetta.evolution.slot_broker import EnvironmentSlotBroker
 
 
 def _manifest(path: Path, *, count: int = 3) -> Path:

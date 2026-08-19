@@ -259,7 +259,7 @@ Pick the target purely from where things ARE. (You never need to know which
 
 ## Mental model
 
-1. **The runner (`rpent/cli/main.py`) owns a long-lived env server** — Pi0.5 + a
+1. **The runner (`zetta/cli/main.py`) owns a long-lived env server** — Pi0.5 + a
    single-env LIBERO sim. It launches and manages the server; you do NOT start,
    stop, or restart it.
 2. **You call one structured MCP tool per step.** The tool BLOCKS until the
@@ -274,7 +274,7 @@ Pick the target purely from where things ARE. (You never need to know which
 
 ## Launch a session
 
-The runner (`rpent/cli/main.py`) launches and owns the env server (Pi0.5 + single-env
+The runner (`zetta/cli/main.py`) launches and owns the env server (Pi0.5 + single-env
 sim) — do not start/stop it. You call MCP tools; begin by reading step 0 via
 `view_driver_state({"step":0})`.
 
@@ -385,7 +385,7 @@ move_pose({"xyz": [x, y, z], "target_pitch": 0.0, "target_yaw": 0.0,
 // map for fine refinement (move the eef over the target first). Pass
 // "point":[row,col] for a point prompt instead of text; prompt and point are
 // mutually exclusive. min_score default 0.2.
-// RPent manages the SAM3 service. If one call fails or finds nothing, the result is
+// Zetta manages the SAM3 service. If one call fails or finds nothing, the result is
 // an {"error":...,"fallback":...} dict — fall back to picking a pixel in
 // image_cam_hi_NN.png and calling back_project.
 segment({"prompt": "the black bowl on the stove", "camera": "agentview",

@@ -1,0 +1,117 @@
+# RoboCasa PickPlaceCounterToStove + GR00T 单卡动态扩容 preset。
+# process_isolation=true，一份服务覆盖并发 1..4，不需要按并发档位重启。
+#
+# 为什么现在可以合并成一份：`RobocasaCurrentCore` 已经实现 `DynamicSlotPool`
+# 协议（`add_slot`/`remove_slot`/`slot_count`，见
+# `rollout_runtime/backends/robocasa_current.py`），`EnvPool.acquire_or_grow`
+# 因此能在池满时按需追加一个 slot，而不是直接 `QUOTA_EXCEEDED`
+# （`rollout_runtime/workers/env_worker.py::EnvPool.dynamic`）。客户端只需要在
+# `robots/robocasa/run_rollout.py` 上把 `--env-pool-size` 固定为 1、把
+# `--env-max-pool-size` 设成当次想跑的并发目标（1/2/4 均可，同一个服务不重启）：
+# `EnvSpecMsg.max_dynamic_pool_size` 不进 pool digest（见 `api/messages.py`），只要
+# `--env-pool-size` 恒为 1，所有并发档位打到的都是同一个池。
+#
+# `env_worker.max_sessions_per_rank` 才是动态扩容的真实硬上限（served 模式下
+# `ServeLimits.max_pool_size` 缺省取这个字段，`serve/app.py::_with_identity` 会把
+# 客户端声明的 `pool_size`/`max_dynamic_pool_size` 都 clamp 到它，见
+# `tests/runtime/test_dynamic_slot_pool.py::
+# test_served_identity_clamps_max_dynamic_pool_size_to_server_limit`）——本 preset
+# 把它设成 4（覆盖单卡验证的最高目标并发），`default_pool_size` 则设
+# 成 1（服务启动时只冷启 1 个 slot，不是一次性建 4 个）。
+#
+# 与"一次性设高上限导致多个 env rank 冷启动时同时触发 EGL/MuJoCo 崩溃"的风险
+# 并不冲突：该风险来自启动时一次性并发构造 N 个 slot，而动态扩容路径
+# （`EnvPool.acquire_or_grow` -> `core.add_slot`）在 `_state_lock` 保护下逐个串行
+# `_cold_create_slot`，同一时刻只有一个 slot 在冷启动——`build()` 仍然只建
+# `default_pool_size=1` 个 slot，后续 1->2->3->4 的每一步都是独立的单 slot 冷启动，
+# 不是批量并发。
+#
+# process_isolation: true 覆盖 add_slot 新建的 slot 同样成立
+# （`RobocasaCurrentCore.add_slot` 复用 `build()` 的同一份 `_make_session()` 构造
+# 逻辑，两者对 `process_isolation` 的分支判断完全一致），因此扩容出来的 slot 不会
+# 绕开 Path B 的进程隔离保护。
+
+env_family: robocasa
+env_config:
+  task: PickPlaceCounterToStove
+  split: target
+  camera_size: 256
+  max_steps: 1000
+  require_isolated_renderer: false
+  process_isolation: true
+
+cluster:
+  num_nodes: 1
+  component_placement:
+    env:     {node_group: node, placement: "0:0"}
+    rollout: {placement: "0:0"}
+
+gateway:
+  gateway_epoch: 1
+  maintenance_interval_seconds: 1.0
+  default_lease_seconds: 1800.0
+  error_retention_seconds: 300.0
+  result_ttl_seconds: 300.0
+  heartbeat_timeout_seconds: 60.0
+  heartbeat_interval_seconds: 10.0
+  max_concurrency_per_rank: 4
+  metrics_namespace: rr
+
+transport:
+  kind: ray_channel
+  command_queue_size: 64
+  control_queue_size: 16
+  result_queue_size: 64
+  infer_request_queue_size: 16
+  infer_response_queue_size: 16
+  command_timeout_seconds: 600.0
+
+env_worker:
+  group_name: env
+  num_ranks: 1
+  placement_strategy: packed
+  # 动态扩容上限（served 模式下 ServeLimits.max_pool_size 的缺省来源，见文件头注释）。
+  max_sessions_per_rank: 4
+  # 启动时只冷启 1 个 slot；1->4 的其余 3 个由 add_slot 按需逐个追加。
+  default_pool_size: 1
+  seed_offset: 0
+
+rollout_worker:
+  group_name: rollout
+  num_ranks: 1
+  placement_strategy: packed
+  tensor_parallel_size: 1
+  pipeline_parallel_size: 1
+  policy_id: groot
+  policy_family: groot
+  policy_backend: groot
+  device: cuda
+  dtype: bfloat16
+  max_concurrent_inferences: 1
+  policy_config:
+    groot_root: /path/to/Isaac-GR00T
+    model_path: /path/to/checkpoints/GR00T-PickPlaceCounterToStove-RoboCasa
+    data_config_name: panda_omron
+    embodiment_tag: new_embodiment
+    denoising_steps: 4
+    maximum_pending: 4
+  scheduler:
+    max_batch_size: 1
+    max_wait_ms: 0.0
+    max_queue_depth: 16
+    max_inflight_per_application: 4
+    max_inflight_per_session: 1
+    fixed_batch_size: null
+
+admission:
+  require_auth: false
+  tokens: {}
+  max_sessions_per_application: 4
+  max_inflight_operations_per_application: 8
+  max_inflight_operations_per_session: 2
+  max_total_inflight_operations: 16
+
+payload:
+  inline_threshold_bytes: 262144
+  request_limit_bytes: 8388608
+  image_codec: png

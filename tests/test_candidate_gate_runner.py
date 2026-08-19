@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 from __future__ import annotations
 
 from dataclasses import replace
@@ -7,20 +7,20 @@ from typing import Callable
 
 import pytest
 
-from rpent.evolution.campaign import analyze_failures
-from rpent.evolution.gate_runner import (
+from zetta.evolution.campaign import analyze_failures
+from zetta.evolution.gate_runner import (
     CandidateGateRunner,
     PairedGateRunner,
     StaleCandidateError,
 )
-from rpent.evolution.gating import evaluate_paired_gate
-from rpent.evolution.jsonio import atomic_write_json, read_json
-from rpent.evolution.lifecycle import (
+from zetta.evolution.gating import evaluate_paired_gate
+from zetta.evolution.jsonio import atomic_write_json, read_json
+from zetta.evolution.lifecycle import (
     _completed_gate_episode_rows,
     authorize_same_seed_threshold_override,
     effective_same_seed_gate_pass_rate,
 )
-from rpent.evolution.models import (
+from zetta.evolution.models import (
     CampaignManifest,
     CampaignPhase,
     CandidateBundle,
@@ -32,9 +32,9 @@ from rpent.evolution.models import (
     RecoveryRule,
     RecoveryStep,
 )
-from rpent.evolution.queue import RolloutJob, SharedHostQueue
-from rpent.evolution.store import CampaignStore
-from rpent.evolution.supervisor import EvolutionSupervisor, promote_and_spawn_generation
+from zetta.evolution.queue import RolloutJob, SharedHostQueue
+from zetta.evolution.store import CampaignStore
+from zetta.evolution.supervisor import EvolutionSupervisor, promote_and_spawn_generation
 
 
 def _manifest(

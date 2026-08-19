@@ -1,4 +1,4 @@
-"""Budget-guarded runner for paired RPent LIBERO experiments.
+"""Budget-guarded runner for paired Zetta LIBERO experiments.
 
 The manifest contains no credentials.  API keys remain in the inherited
 environment.  Every attempted launch is reserved in an append-only JSONL
@@ -455,7 +455,7 @@ def _episode_command(
     command = [
         python,
         "-m",
-        "rpent.cli.main",
+        "zetta.cli.main",
         "--env",
         "libero",
         "--planner",
@@ -503,7 +503,7 @@ def _frozen_runtime_environment(common: dict[str, Any]) -> dict[str, str]:
     if common.get("base_url"):
         result["CODEX_BASE_URL"] = str(common["base_url"])
     if common.get("use_local_adapter_key_placeholder"):
-        result["CODEX_API_KEY"] = "rpent-local-adapter"
+        result["CODEX_API_KEY"] = "zetta-local-adapter"
     for manifest_key, environment_key in (
         ("contact_graspnet_endpoint", "CONTACT_GRASPNET_URL"),
         ("graspgen_endpoint", "GRASPGEN_URL"),

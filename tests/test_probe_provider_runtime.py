@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 from __future__ import annotations
 
 import json
@@ -40,7 +40,7 @@ def test_probe_uses_passed_model_and_reasoning_without_leaking_key(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     requests: list[dict[str, Any]] = []
-    monkeypatch.setenv("ROUTE_KEY_1", "fixture-secret-value")
+    monkeypatch.setenv("ROUTE_KEY_1", "sk-super-secret-value")
 
     def fake_urlopen(request: Any, *, timeout: float) -> _Response:
         assert timeout == 12.0
@@ -65,7 +65,7 @@ def test_probe_uses_passed_model_and_reasoning_without_leaking_key(
             "stream": False,
         }
     ]
-    assert "fixture-secret-value" not in json.dumps(result)
+    assert "sk-super-secret-value" not in json.dumps(result)
 
 
 def test_main_probes_exactly_eight_routes_at_eight_concurrency(
@@ -73,8 +73,8 @@ def test_main_probes_exactly_eight_routes_at_eight_concurrency(
 ) -> None:
     routes = [_route(index) for index in range(8)]
     for index in range(8):
-        monkeypatch.setenv(f"ROUTE_KEY_{index}", f"fixture-secret-{index}")
-    monkeypatch.setenv("RPENT_API_PROVIDERS", json.dumps({"providers": routes}))
+        monkeypatch.setenv(f"ROUTE_KEY_{index}", f"sk-secret-{index}")
+    monkeypatch.setenv("ZETTA_API_PROVIDERS", json.dumps({"providers": routes}))
     monkeypatch.setattr("urllib.request.urlopen", lambda *_args, **_kwargs: _Response())
     monkeypatch.setattr(sys, "argv", ["probe_provider_runtime.py"])
 

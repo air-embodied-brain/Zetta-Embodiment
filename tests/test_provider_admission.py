@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 """Tests for recoverable dynamic provider admission."""
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from rpent.evolution.provider_admission import (
+from zetta.evolution.provider_admission import (
     ProviderAdmission,
     ProviderAdmissionCancelled,
     ProviderAdmissionConfig,

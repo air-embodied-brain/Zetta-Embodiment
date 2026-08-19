@@ -1,8 +1,8 @@
-"""Optional runtime overlays for isolated RPent experiment worktrees.
+"""Optional runtime overlays for isolated Zetta experiment worktrees.
 
 Python imports ``sitecustomize`` during interpreter startup when this worktree
 is on ``PYTHONPATH``.  The overlay is deliberately inert unless an explicit
-package root is supplied, so normal RPent processes keep their installed
+package root is supplied, so normal Zetta processes keep their installed
 LIBERO package unchanged.
 """
 
@@ -13,14 +13,14 @@ from pathlib import Path
 
 
 def _activate_libero_package_overlay() -> None:
-    package_root = os.environ.get("RPENT_LIBERO_PACKAGE_ROOT")
+    package_root = os.environ.get("ZETTA_LIBERO_PACKAGE_ROOT")
     if not package_root:
         return
 
     root = Path(package_root).expanduser().resolve()
     if not (root / "libero" / "__init__.py").is_file():
         raise RuntimeError(
-            "RPENT_LIBERO_PACKAGE_ROOT must contain libero/__init__.py; "
+            "ZETTA_LIBERO_PACKAGE_ROOT must contain libero/__init__.py; "
             f"got {root}"
         )
 

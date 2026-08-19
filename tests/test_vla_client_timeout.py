@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from rpent.utils.vla_client import PREDICT_TIMEOUT_S, VLAClient, _prepare_policy_image
+from zetta.utils.vla_client import PREDICT_TIMEOUT_S, VLAClient, _prepare_policy_image
 
 
 class _RecordingClient:

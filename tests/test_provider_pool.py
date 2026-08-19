@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 from __future__ import annotations
 
 import json
@@ -11,8 +11,8 @@ import pytest
 from pydantic_ai.exceptions import ModelAPIError, ModelHTTPError
 from pydantic_ai.models import Model
 
-from rpent.planner.base import build_planner
-from rpent.planner.provider_pool import (
+from zetta.planner.base import build_planner
+from zetta.planner.provider_pool import (
     PROVIDERS_ENV,
     FailoverModel,
     ProviderModelRoute,
@@ -20,9 +20,8 @@ from rpent.planner.provider_pool import (
     ProviderRouteSpec,
     is_retryable_provider_error,
     load_provider_pool_config,
-    sanitize_provider_config_for_broker_client,
 )
-from rpent.planner.provider_request_admission import ProviderRequestAdmission
+from zetta.planner.provider_request_admission import ProviderRequestAdmission
 
 
 class _FakeModel(Model):
@@ -89,69 +88,6 @@ class _Clock:
         self.value += seconds
 
 
-@pytest.mark.parametrize(
-    "document",
-    [
-        [
-            {
-                "name": "one",
-                "provider": "openai-chat",
-                "base_url": "https://one.example/v1",
-                "api_key_env": "UPSTREAM_ONE",
-            }
-        ],
-        {
-            "providers": [
-                {
-                    "name": "one",
-                    "provider": "openai-chat",
-                    "base_url": "https://one.example/v1",
-                    "api_key": "literal-secret",
-                }
-            ]
-        },
-        {
-            "routes": [
-                {
-                    "name": "one",
-                    "provider": "openai-chat",
-                    "base_url": "https://one.example/v1",
-                    "key": "legacy-secret",
-                }
-            ]
-        },
-        {
-            "one": {
-                "provider": "openai-chat",
-                "base_url": "https://one.example/v1",
-                "api_key_env": "UPSTREAM_ONE",
-            }
-        },
-        {
-            "name": "one",
-            "provider": "openai-chat",
-            "base_url": "https://one.example/v1",
-            "api_key": "literal-secret",
-        },
-    ],
-)
-def test_broker_client_sanitizer_covers_every_provider_document_shape(
-    document: object,
-) -> None:
-    sanitized = sanitize_provider_config_for_broker_client(json.dumps(document))
-
-    assert "UPSTREAM_ONE" not in sanitized
-    assert "literal-secret" not in sanitized
-    assert "legacy-secret" not in sanitized
-    assert "broker-managed-placeholder" in sanitized
-    config = load_provider_pool_config(
-        default_model="openai-chat:gpt-5.6-sol",
-        env={PROVIDERS_ENV: sanitized},
-    )
-    assert config is not None
-    assert len(config.routes) == 1
-
-
 def _spec(
     name: str,
     *,
@@ -198,7 +134,7 @@ def test_list_configuration_is_sorted_by_price_and_hides_keys(tmp_path: Path):
         default_model="openai-responses:gpt-test",
         env={
             PROVIDERS_ENV: json.dumps(raw),
-            "RPENT_API_PROVIDER_STATE_FILE": str(tmp_path / "state.json"),
+            "ZETTA_API_PROVIDER_STATE_FILE": str(tmp_path / "state.json"),
         },
     )
     assert config is not None
@@ -211,29 +147,29 @@ def test_mapping_configuration_and_api_key_env_are_supported(tmp_path: Path):
     document = {
         "cooldown_seconds": 31,
         "state_file": str(tmp_path / "shared.json"),
-        "primary": {
+        "kit": {
             "provider": "openai-responses",
-            "url": "https://primary.invalid/v1",
-            "api_key_env": "PRIMARY_KEY",
+            "url": "https://kit.invalid/v1",
+            "api_key_env": "KIT_KEY",
             "price": 0.125,
             "max_concurrency": 20,
             "rpm": 5000,
             "tpm": 500000,
         },
-        "secondary": {
+        "cctq": {
             "provider": "openai-responses",
-            "url": "https://secondary.invalid/v1",
-            "key": "secondary-key",
+            "url": "https://cctq.invalid/v1",
+            "key": "cctq-key",
             "price": 0.15,
         },
     }
     config = load_provider_pool_config(
         default_model="openai-responses:gpt-test",
-        env={PROVIDERS_ENV: json.dumps(document), "PRIMARY_KEY": "primary-key"},
+        env={PROVIDERS_ENV: json.dumps(document), "KIT_KEY": "kit-key"},
     )
     assert config is not None
-    assert [route.name for route in config.routes] == ["primary", "secondary"]
-    assert config.routes[0].api_key == "primary-key"
+    assert [route.name for route in config.routes] == ["kit", "cctq"]
+    assert config.routes[0].api_key == "kit-key"
     assert config.routes[0].cooldown_seconds == 31
     assert config.routes[0].max_concurrency == 20
     assert config.routes[0].rpm_limit == 5000
@@ -570,7 +506,7 @@ def test_build_planner_uses_provider_pool_when_configured(
             ]
         ),
     )
-    monkeypatch.setenv("RPENT_API_PROVIDER_STATE_FILE", str(tmp_path / "health.json"))
+    monkeypatch.setenv("ZETTA_API_PROVIDER_STATE_FILE", str(tmp_path / "health.json"))
     planner = build_planner(
         "api",
         output_dir=tmp_path,
@@ -598,11 +534,11 @@ def test_build_planner_uses_external_central_broker_when_configured(
             ]
         ),
     )
-    monkeypatch.setenv("RPENT_API_PROVIDER_STATE_FILE", str(tmp_path / "health.json"))
+    monkeypatch.setenv("ZETTA_API_PROVIDER_STATE_FILE", str(tmp_path / "health.json"))
     monkeypatch.setenv(
-        "RPENT_API_PROVIDER_BROKER_URL", "http://127.0.0.1:4110"
+        "ZETTA_API_PROVIDER_BROKER_URL", "http://127.0.0.1:4110"
     )
-    monkeypatch.setenv("RPENT_API_PROVIDER_BROKER_API_KEY", "local-broker-key")
+    monkeypatch.setenv("ZETTA_API_PROVIDER_BROKER_API_KEY", "local-broker-key")
     planner = build_planner(
         "api",
         output_dir=tmp_path,

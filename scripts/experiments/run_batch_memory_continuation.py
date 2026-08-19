@@ -16,7 +16,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from rpent.memory.task_memory import (
+from zetta.memory.task_memory import (
     TaskMemoryStore,
     canonical_sha256,
     validate_task_memory,

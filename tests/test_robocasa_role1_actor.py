@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 from __future__ import annotations
 
 import json
@@ -7,6 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+import numpy as np
 import pytest
 
 from robots.robocasa import run_rollout
@@ -27,6 +28,17 @@ from robots.robocasa.slide_dishwasher_program import (
     GUARDED_SUFFIX_TOOL,
 )
 from robots.robocasa.tool_bindings import binding_for_task
+from rollout_runtime.api.ids import EpisodeId, RequestId, SessionId
+from rollout_runtime.api.messages import (
+    Observation,
+    PerStepRecord,
+    PolicyInferResult,
+    SessionHandle,
+    SessionStatus,
+    StepResult,
+)
+from rollout_runtime.api.result import ok
+from rollout_runtime.core.payload import decode_array, encode_array
 
 
 def _decision(event: Any, **updates: Any) -> dict[str, Any]:
@@ -411,204 +423,6 @@ def test_actor_never_executes_a_rejected_vla_chunk(tmp_path: Path) -> None:
         )
 
 
-def test_strict_gen0_skips_role1_and_records_normal_termination_as_valid_zero(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    class FakeVla:
-        def __init__(self, *_: Any, **__: Any) -> None:
-            pass
-
-        def act(self, *_: Any, **__: Any) -> tuple[list[list[float]], dict[str, Any]]:
-            return [[0.0] * 12], {"action_chunk_sha256": "a" * 64}
-
-    class FakeAdapterForRollout:
-        def __init__(self, *_: Any, **__: Any) -> None:
-            pass
-
-    class FailingActor:
-        def __init__(self, *_: Any, **__: Any) -> None:
-            raise AssertionError("strict Gen0 must not initialize Role1")
-
-        def decide_action(self, **_: Any) -> Any:
-            raise AssertionError("Role1 must not inspect Gen0 merely because chunks == 0")
-
-    class FakeEnvironment:
-        def __init__(self) -> None:
-            self.reset_payload: dict[str, Any] | None = None
-            self.execute_payload: dict[str, Any] | None = None
-
-        def reset(self, **payload: Any) -> dict[str, Any]:
-            self.reset_payload = payload
-            return {
-                "observation": {"state": {}, "images": {}},
-                "authoritative_success": False,
-                "terminated": False,
-                "truncated": False,
-                "task_program_enabled": False,
-                "critic_rule_count": 0,
-            }
-
-        def observation(self, **_: Any) -> dict[str, Any]:
-            return {"observation": {"state": {}, "images": {}}}
-
-        def execute_chunk(self, actions: Any, **payload: Any) -> dict[str, Any]:
-            self.execute_payload = {"actions": actions, **payload}
-            return {
-                "executed_horizon": 1,
-                "steps": [
-                    {
-                        "step_index": 1,
-                        "applied_action": {},
-                        "action_sha256": "a" * 64,
-                        "state": {},
-                        "reward": 0.0,
-                        "official_success": False,
-                        "terminated": True,
-                        "truncated": False,
-                        "proposal_rule_ids": [],
-                    }
-                ],
-                "critic_proposals": [],
-                "authoritative_success": False,
-                "terminated": True,
-                "truncated": False,
-                "task_program_enabled": False,
-                "critic_rule_count": 0,
-            }
-
-        def finalize_episode(self) -> dict[str, Any]:
-            return {"video_paths": {}}
-
-        def release(self) -> dict[str, Any]:
-            return {"binding_released": True, "released_generation": 0}
-
-    monkeypatch.setattr(run_rollout, "Gr00tClient", FakeVla)
-    monkeypatch.setattr(run_rollout, "Role1ModelAdapter", FakeAdapterForRollout)
-    monkeypatch.setattr(run_rollout, "Role1EpisodeActor", FailingActor)
-    monkeypatch.setattr(
-        run_rollout,
-        "build_episode_visual_artifacts",
-        lambda **_: {"artifacts": {}, "artifact_sha256": {}},
-    )
-    args = SimpleNamespace(
-        output_dir=str(tmp_path / "attempt"),
-        result_file=str(tmp_path / "attempt" / "episode_record.json"),
-        bundle="none",
-        bundle_sha256="none",
-        baseline_mode="strict_pure_vla",
-        safety_layer="interface_contract_v1",
-        role1_planner="api",
-        role1_model="openai:gpt-5.6-sol",
-        reasoning_effort="high",
-        role1_max_tokens=128,
-        role1_timeout_s=10.0,
-        role1_heartbeat_s=0.01,
-        role1_max_turns=1,
-        role1_max_decisions_per_action=2,
-        allow_privileged_tools=True,
-        vla_endpoint="http://127.0.0.1:1",
-        vla_timeout_s=10.0,
-        task="SlideDishwasherRack",
-        split="target",
-        seed=1,
-        policy_rng=2,
-        instruction=None,
-        max_actions=8,
-        actions_per_chunk=8,
-        logical_id="method-failure-valid-zero",
-        generation=0,
-        attempt_index=0,
-    )
-    environment = FakeEnvironment()
-    record = run_rollout._run_with_environment(args, environment)  # type: ignore[arg-type]
-    assert record.status == "valid"
-    assert record.success is False
-    assert record.failure_segment is not None
-    assert record.artifact_index["role1_decisions"] == 0
-    assert record.artifact_index["terminated"] is True
-    assert record.artifact_index["task_program_enabled"] is False
-    assert environment.reset_payload is not None
-    assert environment.reset_payload["enable_task_program"] is False
-    assert environment.execute_payload is not None
-    assert environment.execute_payload["critic_rules"] == []
-    assert environment.execute_payload["interrupt_on_proposal"] is False
-
-
-def test_pure_vla_rollout_does_not_resolve_task_binding(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    class FakeVla:
-        def __init__(self, *_: Any, **__: Any) -> None:
-            pass
-
-    class FakeEnvironment:
-        def reset(self, **_: Any) -> dict[str, Any]:
-            return {
-                "observation": {"state": {}, "images": {}},
-                "authoritative_success": True,
-                "task_program_enabled": False,
-                "critic_rule_count": 0,
-                "terminated": False,
-                "truncated": False,
-            }
-
-        def finalize_episode(self) -> dict[str, Any]:
-            return {"video_paths": {}}
-
-        def release(self) -> dict[str, Any]:
-            return {"binding_released": True, "released_generation": 0}
-
-    def fail_if_binding_is_resolved(_: str) -> Any:
-        raise AssertionError("pure VLA must not resolve an RPent task binding")
-
-    monkeypatch.setattr(run_rollout, "Gr00tClient", FakeVla)
-    monkeypatch.setattr(run_rollout, "binding_for_task", fail_if_binding_is_resolved)
-    monkeypatch.setattr(
-        run_rollout,
-        "build_episode_visual_artifacts",
-        lambda **_: {"artifacts": {}, "artifact_sha256": {}},
-    )
-    args = SimpleNamespace(
-        output_dir=str(tmp_path / "attempt"),
-        result_file=str(tmp_path / "attempt" / "episode_record.json"),
-        bundle="none",
-        bundle_sha256="none",
-        role1_planner="none",
-        role1_model=None,
-        reasoning_effort=None,
-        role1_max_tokens=128,
-        role1_timeout_s=10.0,
-        role1_max_turns=1,
-        role1_max_decisions_per_action=2,
-        allow_privileged_tools=False,
-        tool_runtime="harness",
-        harness_root="/must/not/be/read",
-        vla_endpoint="http://127.0.0.1:1",
-        vla_timeout_s=10.0,
-        task="PickPlaceDrawerToCounter",
-        split="target",
-        seed=100,
-        policy_rng=100,
-        instruction=None,
-        max_actions=8,
-        actions_per_chunk=8,
-        logical_id="pure-vla-unbound-task",
-        generation=0,
-        attempt_index=0,
-    )
-    record = run_rollout._run_with_environment(args, FakeEnvironment())  # type: ignore[arg-type]
-    assert record.status == "valid"
-    assert record.success is True
-    assert record.artifact_index["tool_runtime"] == {
-        "backend": "none_pure_vla",
-        "tool_count": 0,
-        "tool_names": [],
-        "manifest_sha256": None,
-    }
-    assert (tmp_path / "attempt" / "tool_events.jsonl").read_text() == ""
-    assert not (tmp_path / "attempt" / "role1").exists()
-
-
 def test_rollout_counts_invalid_model_contract_as_valid_zero() -> None:
     try:
         raise Role1ContractError("model omitted an executable alternative")
@@ -619,3 +433,525 @@ def test_rollout_counts_invalid_model_contract_as_valid_zero() -> None:
         error.__cause__ = cause
     assert _is_role1_method_failure(error)
     assert not _is_role1_method_failure(Role1ModelError("provider unavailable"))
+
+ACTION_DIM = 12
+
+
+def _snapshot_payload(**overrides: Any) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "observation": {"state": {}, "images": {}, "image_sha256": {}},
+        "task": "SlideDishwasherRack",
+        "split": "target",
+        "step_index": 0,
+        "terminated": False,
+        "truncated": False,
+        "reward": 0.0,
+        "official_success": False,
+        "success_latched": False,
+        "success_first_step": None,
+        "authoritative_success": False,
+        "bundle_sha256": None,
+        "task_program_enabled": False,
+        "critic_rule_count": 0,
+        "video_paths": {},
+        "renderer": {},
+    }
+    payload.update(overrides)
+    return payload
+
+
+class _FakeRuntimeClient:
+    """``RemoteRuntimeClient``-shaped stand-in: one session, no simulator.
+
+    Attributes:
+        calls: Ordered operation names, so a test can assert *which* call path
+            the loop took (``policy_step`` vs ``policy_infer`` + ``action_step``).
+        reset_options: The ``ResetSpec.options`` the rollout sent.
+        policy_requests: Every ``PolicyRequest`` the rollout sent.
+        executed_chunks: Action chunks that reached ``action_step``.
+        closed: Whether ``close_sessions`` succeeded.
+    """
+
+    def __init__(
+        self,
+        *,
+        chunks_before_termination: int = 1,
+        critic_proposals_by_chunk: dict[int, list[dict[str, Any]]] | None = None,
+        snapshot: dict[str, Any] | None = None,
+    ) -> None:
+        self.chunks_before_termination = int(chunks_before_termination)
+        self.critic_proposals_by_chunk = critic_proposals_by_chunk or {}
+        self.snapshot_payload = snapshot or _snapshot_payload()
+        self.calls: list[str] = []
+        self.reset_options: dict[str, Any] | None = None
+        self.policy_requests: list[Any] = []
+        self.executed_chunks: list[list[list[float]]] = []
+        self.closed = False
+        self.session_id = SessionId("session-fake")
+        self._chunk_index = 0
+        self._step_index = 0
+
+    # -------------------------------------------------------------- Control plane
+
+    async def create_sessions(self, requests: Any) -> list[Any]:
+        self.calls.append("create_sessions")
+        self.create_request = list(requests)[0]
+        return [
+            ok(
+                SessionHandle(
+                    session_id=self.session_id,
+                    application_id="zetta-robocasa",
+                    env_spec_digest="d" * 64,
+                    default_policy_id=self.create_request.default_policy_id,
+                    lease_expiration=time.time() + 3600.0,
+                    gateway_epoch=1,
+                )
+            )
+        ]
+
+    async def renew_sessions(self, session_ids: Any, lease_seconds: float) -> list[Any]:
+        self.calls.append("renew_sessions")
+        return [
+            ok(
+                SessionStatus(
+                    session_id=self.session_id,
+                    state="READY",  # type: ignore[arg-type]
+                    lease_expiration=time.time() + lease_seconds,
+                )
+            )
+        ]
+
+    async def close_sessions(self, session_ids: Any) -> list[Any]:
+        self.calls.append("close_sessions")
+        self.closed = True
+        return [ok(None)]
+
+    async def aclose(self) -> None:
+        self.calls.append("aclose")
+
+    # -------------------------------------------------------------- Action plane
+
+    async def reset(self, session_ids: Any, reset_spec: Any) -> list[Any]:
+        self.calls.append("reset")
+        self.reset_options = dict(reset_spec.options)
+        self.reset_seed = reset_spec.seed
+        return [
+            ok(
+                StepResult(
+                    request_id=RequestId("request-reset"),
+                    session_id=self.session_id,
+                    episode_id=EpisodeId(1),
+                    observation=Observation(
+                        session_id=self.session_id,
+                        episode_id=EpisodeId(1),
+                        step_index=0,
+                    ),
+                    info={"reset": True, "episode_id": 1},
+                    side_effect_applied=True,
+                )
+            )
+        ]
+
+    async def extension_call(
+        self, session_ids: Any, namespace: str, method: str, args: dict[str, Any]
+    ) -> list[Any]:
+        self.calls.append(f"{namespace}.{method}")
+        if method == "snapshot":
+            return [ok(dict(self.snapshot_payload))]
+        if method == "finalize_episode":
+            return [ok({"finalized": True, "video_paths": {}, "video_manifest": None})]
+        raise AssertionError(f"unexpected extension {namespace}.{method}")
+
+    async def policy_step(self, session_ids: Any, policy_request: Any) -> list[Any]:
+        self.calls.append("policy_step")
+        self.policy_requests.append(policy_request)
+        return [ok(self._step_result())]
+
+    async def policy_infer(self, session_ids: Any, policy_request: Any) -> list[Any]:
+        self.calls.append("policy_infer")
+        self.policy_requests.append(policy_request)
+        block = np.zeros((1, ACTION_DIM), dtype=np.float32)
+        return [
+            ok(
+                PolicyInferResult(
+                    request_id=RequestId("request-infer"),
+                    session_id=self.session_id,
+                    episode_id=EpisodeId(1),
+                    actions=encode_array(block),
+                    model_version="fake-v1",
+                    auxiliary_outputs={"chunk": 1},
+                    observation_step_index=self._step_index,
+                    info={"policy_id": "groot"},
+                )
+            )
+        ]
+
+    async def action_step(self, session_ids: Any, actions: Any) -> list[Any]:
+        self.calls.append("action_step")
+        block = decode_array(list(actions)[0])
+        self.executed_chunks.append([[float(v) for v in row] for row in block])
+        return [ok(self._step_result())]
+
+    # -------------------------------------------------------------- Internal
+
+    def _step_result(self) -> StepResult:
+        self._chunk_index += 1
+        self._step_index += 1
+        terminated = self._chunk_index >= self.chunks_before_termination
+        proposals = self.critic_proposals_by_chunk.get(self._chunk_index, [])
+        return StepResult(
+            request_id=RequestId(f"request-chunk-{self._chunk_index}"),
+            session_id=self.session_id,
+            episode_id=EpisodeId(1),
+            observation=Observation(
+                session_id=self.session_id,
+                episode_id=EpisodeId(1),
+                step_index=self._step_index,
+            ),
+            reward=0.0,
+            terminated=terminated,
+            truncated=False,
+            executed_horizon=1,
+            per_step=[
+                PerStepRecord(
+                    step_index=self._step_index,
+                    reward=0.0,
+                    terminated=terminated,
+                    truncated=False,
+                    info={
+                        "applied_action": {"action.gripper_close": [0.0]},
+                        "action_sha256": "a" * 64,
+                        "observation_sha256": "b" * 64,
+                        "raw_state": {},
+                        "official_success": False,
+                        "success_latched": False,
+                        "proposal_rule_ids": [
+                            str(item["rule_id"]) for item in proposals
+                        ],
+                    },
+                )
+            ],
+            info={
+                "critic_proposals": proposals,
+                "critic_rule_count": len(self.critic_proposals_by_chunk and proposals),
+                "task_program_enabled": False,
+                "authoritative_success": False,
+                "official_success": False,
+                "success_latched": False,
+                "success_first_step": None,
+                "video_paths": {},
+                "environment_write_owner": "robocasa_session",
+                "model_version": "fake-v1",
+                "policy_id": "groot",
+            },
+            side_effect_applied=True,
+        )
+
+
+def _rollout_args(tmp_path: Path, **overrides: Any) -> SimpleNamespace:
+    attempt = tmp_path / "attempt"
+    args = SimpleNamespace(
+        runtime_url="http://runtime.test",
+        runtime_token=None,
+        policy_id="groot",
+        operation_timeout_s=30.0,
+        session_timeout_s=30.0,
+        session_lease_s=3600.0,
+        output_dir=str(attempt),
+        result_file=str(attempt / "episode_record.json"),
+        bundle="none",
+        bundle_sha256="none",
+        baseline_mode="strict_pure_vla",
+        safety_layer="interface_contract_v1",
+        role1_planner="none",
+        role1_model=None,
+        reasoning_effort=None,
+        role1_max_tokens=128,
+        role1_timeout_s=10.0,
+        role1_heartbeat_s=0.01,
+        role1_max_turns=1,
+        role1_max_decisions_per_action=2,
+        allow_privileged_tools=True,
+        tool_runtime="builtin",
+        harness_root=None,
+        task="SlideDishwasherRack",
+        split="target",
+        seed=1,
+        policy_rng=2,
+        instruction=None,
+        max_actions=8,
+        actions_per_chunk=8,
+        camera_size=256,
+        env_max_steps=1000,
+        require_isolated_renderer=True,
+        process_isolation=False,
+        env_pool_size=1,
+        env_max_pool_size=None,
+        logical_id="stage7-loop",
+        generation=0,
+        attempt_index=0,
+    )
+    for key, value in overrides.items():
+        setattr(args, key, value)
+    return args
+
+
+async def test_strict_gen0_uses_policy_step_and_scores_termination_as_valid_zero(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Gen0 goes through the atomic ``policy_step``; Role1 is never initialized, and a normal termination is recorded as a valid zero score."""
+
+    class FailingAdapter:
+        def __init__(self, *_: Any, **__: Any) -> None:
+            raise AssertionError("strict Gen0 must not initialize Role1")
+
+    class FailingActor:
+        def __init__(self, *_: Any, **__: Any) -> None:
+            raise AssertionError("strict Gen0 must not initialize Role1")
+
+    monkeypatch.setattr(run_rollout, "Role1ModelAdapter", FailingAdapter)
+    monkeypatch.setattr(run_rollout, "Role1EpisodeActor", FailingActor)
+    monkeypatch.setattr(
+        run_rollout,
+        "build_episode_visual_artifacts",
+        lambda **_: {"artifacts": {}, "artifact_sha256": {}},
+    )
+    client = _FakeRuntimeClient(chunks_before_termination=1)
+    args = _rollout_args(tmp_path, role1_planner="api", logical_id="gen0-valid-zero")
+
+    record = await run_rollout.run(args, client=client)
+
+    assert record.status == "valid"
+    assert record.success is False
+    assert record.failure_segment is not None
+    assert record.artifact_index["role1_decisions"] == 0
+    assert record.artifact_index["terminated"] is True
+    assert record.artifact_index["task_program_enabled"] is False
+    # The only call chain: create -> reset -> snapshot -> policy_step -> finalize -> close
+    assert client.calls == [
+        "create_sessions",
+        "reset",
+        "robocasa.snapshot",
+        "policy_step",
+        "robocasa.finalize_episode",
+        "close_sessions",
+    ]
+    # Gen0 has no bundle, so there is no Critic rule to dispatch
+    assert client.reset_options is not None
+    assert client.reset_options["critic_rules"] == []
+    assert client.reset_options["interrupt_on_proposal"] is False
+    assert client.reset_options["enable_task_program"] is False
+    assert client.reset_seed == 1
+    assert client.policy_requests[0].actions_per_chunk == 8
+    assert client.policy_requests[0].inference_parameters == {
+        "seed": run_rollout._chunk_seed(2, 0)
+    }
+    assert record.artifact_index["environment_release"]["session_closed"] is True
+
+
+async def test_pure_vla_rollout_does_not_resolve_task_binding(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fail_if_binding_is_resolved(_: str) -> Any:
+        raise AssertionError("pure VLA must not resolve an Zetta task binding")
+
+    monkeypatch.setattr(run_rollout, "binding_for_task", fail_if_binding_is_resolved)
+    monkeypatch.setattr(
+        run_rollout,
+        "build_episode_visual_artifacts",
+        lambda **_: {"artifacts": {}, "artifact_sha256": {}},
+    )
+    client = _FakeRuntimeClient(
+        snapshot=_snapshot_payload(authoritative_success=True, success_latched=True)
+    )
+    args = _rollout_args(
+        tmp_path,
+        role1_planner="none",
+        tool_runtime="harness",
+        harness_root="/must/not/be/read",
+        allow_privileged_tools=False,
+        task="PickPlaceDrawerToCounter",
+        seed=100,
+        policy_rng=100,
+        logical_id="pure-vla-unbound-task",
+    )
+
+    record = await run_rollout.run(args, client=client)
+
+    assert record.status == "valid"
+    # After reset, authoritative_success is already true, so not a single chunk should run
+    assert record.success is True
+    assert "policy_step" not in client.calls
+    assert record.artifact_index["tool_runtime"] == {
+        "backend": "none_pure_vla",
+        "tool_count": 0,
+        "tool_names": [],
+        "manifest_sha256": None,
+    }
+    assert (tmp_path / "attempt" / "tool_events.jsonl").read_text() == ""
+    assert not (tmp_path / "attempt" / "role1").exists()
+
+
+def _critic_rule() -> Any:
+    from zetta.evolution.models import CriticRule
+
+    return CriticRule(
+        rule_id="critic-1",
+        title="rack residual stagnant",
+        feature="privileged.dishwasher.rack.residual_to_success",
+        operator="gt",
+        threshold=0.05,
+        dwell_steps=1,
+        cooldown_steps=0,
+        proposal="stop and re-approach the rack",
+        evidence_ids=("evidence-1",),
+    )
+
+
+def _bundle_file(tmp_path: Path) -> tuple[Path, Any]:
+    from zetta.evolution.jsonio import atomic_write_json
+    from zetta.evolution.models import CandidateBundle, RecoveryRule, RecoveryStep
+
+    recovery = RecoveryRule(
+        recovery_id="recovery-1",
+        title="re-approach with a guarded push",
+        trigger_rule_ids=("critic-1",),
+        precondition="rack residual above the frozen threshold",
+        steps=(
+            RecoveryStep(
+                tool=CONTACT_PUSH_TOOL,
+                parameters={"distance_m": 0.02},
+                stop_when="rack residual below threshold",
+            ),
+        ),
+        safety_constraints=("no base motion",),
+        stop_condition="rack fully seated",
+        fallback="return control to the VLA",
+        evidence_ids=("evidence-1",),
+    )
+    bundle = CandidateBundle(
+        candidate_id="candidate-stage7",
+        generation=1,
+        parent_sha256=None,
+        diagnosis_sha256="3" * 64,
+        causal_hypothesis="one auditable failure mechanism",
+        mechanism_change="one frozen critic rule with a bounded recovery",
+        validation_plan="paired same-seed measurement",
+        critic_rules=(_critic_rule(),),
+        recovery_rules=(recovery,),
+    )
+    path = tmp_path / "bundle.json"
+    atomic_write_json(path, bundle.as_dict(), overwrite=False)
+    return path, bundle
+
+
+async def test_active_bundle_sends_critic_rules_and_switches_to_action_step_for_role1(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The complete active_bundle loop: rule dispatch -> Critic proposal -> Role1 review -> action_step.
+
+    This validates two behavioral changes in one pass:
+
+    1. ``critic_rules`` actually reach the environment via ``ResetSpec.options``
+       (previously hardcoded as an empty list, leaving the Critic permanently
+       silent and giving ``active_bundle`` no semantics on the runtime path);
+    2. The chunk where Role1 is allowed to intervene goes through
+       ``policy_infer`` + ``action_step``, executing Role1's rewritten action
+       instead of the policy's original action (``policy_step`` is atomic and
+       its action block never passes through the client, so Role1 cannot
+       review it).
+    """
+    bundle_path, bundle = _bundle_file(tmp_path)
+    reviewed_actions = [[0.25] * ACTION_DIM]
+
+    class FakeAdapterForRollout:
+        def __init__(self, *_: Any, **__: Any) -> None:
+            pass
+
+    class ReviewingActor:
+        def __init__(self, *_: Any, **__: Any) -> None:
+            self.seen: list[dict[str, Any]] = []
+
+        def decide_action(self, **kwargs: Any) -> Any:
+            self.seen.append(kwargs)
+            return SimpleNamespace(
+                decision_ids=("decision-1",),
+                selected_tool=CONTACT_PUSH_TOOL,
+                terminate=False,
+                termination_reason=None,
+                actions=tuple(reviewed_actions),
+            )
+
+    actors: list[ReviewingActor] = []
+
+    def _make_actor(*args: Any, **kwargs: Any) -> ReviewingActor:
+        actor = ReviewingActor()
+        actors.append(actor)
+        return actor
+
+    monkeypatch.setattr(run_rollout, "Role1ModelAdapter", FakeAdapterForRollout)
+    monkeypatch.setattr(run_rollout, "Role1EpisodeActor", _make_actor)
+    monkeypatch.setattr(
+        run_rollout,
+        "build_episode_visual_artifacts",
+        lambda **_: {"artifacts": {}, "artifact_sha256": {}},
+    )
+    proposal = {
+        "rule_id": "critic-1",
+        "step_index": 1,
+        "proposal": "stop and re-approach the rack",
+    }
+    client = _FakeRuntimeClient(
+        chunks_before_termination=2,
+        critic_proposals_by_chunk={1: [proposal]},
+    )
+    args = _rollout_args(
+        tmp_path,
+        role1_planner="api",
+        baseline_mode="active_bundle",
+        bundle=str(bundle_path),
+        bundle_sha256=bundle.sha256,
+        generation=1,
+        logical_id="active-bundle-role1",
+    )
+
+    record = await run_rollout.run(args, client=client)
+
+    assert record.status == "valid"
+    # Frozen rules are dispatched once via reset (constant within the episode, so not resent per chunk)
+    assert client.reset_options is not None
+    assert client.reset_options["critic_rules"] == [
+        rule.as_dict() for rule in bundle.critic_rules
+    ]
+    assert client.reset_options["interrupt_on_proposal"] is True
+    assert client.reset_options["bundle_sha256"] == bundle.sha256
+    # First chunk has no proposal -> atomic policy_step; second chunk has a proposal -> infer + action_step
+    assert client.calls == [
+        "create_sessions",
+        "reset",
+        "robocasa.snapshot",
+        "policy_step",
+        "policy_infer",
+        "robocasa.snapshot",
+        "action_step",
+        "robocasa.finalize_episode",
+        "close_sessions",
+    ]
+    assert client.executed_chunks == [reviewed_actions]
+    assert record.artifact_index["role1_decisions"] == 1
+    assert record.artifact_index["active_bundle_sha256"] == bundle.sha256
+    # What Role1 sees is the previous round's Critic proposal along with the actual VLA action block
+    assert len(actors) == 1
+    seen = actors[0].seen[0]
+    assert [item["rule_id"] for item in seen["critic_values"]] == ["critic-1"]
+    assert seen["vla_metadata"]["source"] == "policy_infer"
+    assert len(seen["vla_metadata"]["action_chunk_sha256"]) == 64
+    events = [
+        json.loads(line)
+        for line in (tmp_path / "attempt" / "tool_events.jsonl")
+        .read_text()
+        .splitlines()
+        if line.strip()
+    ]
+    assert [event["type"] for event in events] == ["role1_action_boundary"]
+    assert events[0]["environment_write"] is False

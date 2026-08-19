@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 from __future__ import annotations
 
 import json
@@ -9,14 +9,14 @@ from typing import Any
 import pytest
 
 from robots.robocasa.slide_dishwasher_program import CONTACT_PUSH_TOOL
-from rpent.evolution.campaign import analyze_failures
-from rpent.evolution.gating import evaluate_paired_gate
-from rpent.evolution.jsonio import (
+from zetta.evolution.campaign import analyze_failures
+from zetta.evolution.gating import evaluate_paired_gate
+from zetta.evolution.jsonio import (
     AppendOnlyLedger,
     atomic_write_json,
     canonical_sha256,
 )
-from rpent.evolution.lifecycle import (
+from zetta.evolution.lifecycle import (
     _agent_artifact_index,
     _bounded_gate_descriptors,
     _bounded_refinement_artifact_index,
@@ -33,7 +33,7 @@ from rpent.evolution.lifecycle import (
     reject_registered_noop_candidate,
     run_proposal_stage,
 )
-from rpent.evolution.models import (
+from zetta.evolution.models import (
     CampaignManifest,
     CampaignPhase,
     CandidateBundle,
@@ -46,11 +46,11 @@ from rpent.evolution.models import (
     RecoveryRule,
     RecoveryStep,
 )
-from rpent.evolution.stages import (
+from zetta.evolution.stages import (
     _validate_causal_isolation_candidate,
     blind_artifact_index,
 )
-from rpent.evolution.store import CampaignStore
+from zetta.evolution.store import CampaignStore
 
 
 def test_gate_evidence_replay_uses_the_frozen_schema_threshold() -> None:
@@ -838,7 +838,7 @@ def test_v3_style_shadow_false_positives_are_artifacted_before_live_gate(
     store.register_diagnosis(diagnosis)
     store.transition(CampaignPhase.PROPOSE)
     monkeypatch.setattr(
-        "rpent.evolution.lifecycle.CodexStageAgent", _CapturingRefinementAgent
+        "zetta.evolution.lifecycle.CodexStageAgent", _CapturingRefinementAgent
     )
 
     def v3_shadow(**values: Any) -> dict[str, Any]:
@@ -863,7 +863,7 @@ def test_v3_style_shadow_false_positives_are_artifacted_before_live_gate(
             "report_sha256": "5" * 64,
         }
 
-    monkeypatch.setattr("rpent.evolution.lifecycle.evaluate_shadow_replay", v3_shadow)
+    monkeypatch.setattr("zetta.evolution.lifecycle.evaluate_shadow_replay", v3_shadow)
     expected_candidate = _candidate(candidate_id="candidate-001", diagnosis=diagnosis)
 
     with pytest.raises(ValueError, match="false-positive rate 1 exceeds"):
@@ -1131,7 +1131,7 @@ def test_rejected_gate_evidence_is_opaque_and_refinement_reconstructs_fresh_thre
     assert "private-pair" not in serialized
 
     monkeypatch.setattr(
-        "rpent.evolution.lifecycle.CodexStageAgent", _CapturingRefinementAgent
+        "zetta.evolution.lifecycle.CodexStageAgent", _CapturingRefinementAgent
     )
     result = run_proposal_stage(
         campaign_root=root,
@@ -1194,7 +1194,7 @@ def test_registered_candidate_recovers_without_duplicate_provider_call(
         {**state, "candidate_sha256": None},
         overwrite=True,
     )
-    monkeypatch.setattr("rpent.evolution.lifecycle.CodexStageAgent", _UnexpectedAgent)
+    monkeypatch.setattr("zetta.evolution.lifecycle.CodexStageAgent", _UnexpectedAgent)
     recovered = run_proposal_stage(
         campaign_root=root,
         tool_catalog={"tools": [{"name": CONTACT_PUSH_TOOL}]},
@@ -1241,7 +1241,7 @@ def test_registered_candidate_recovery_cannot_bypass_shadow_false_positives(
         overwrite=False,
     )
     store.register_candidate(candidate)
-    monkeypatch.setattr("rpent.evolution.lifecycle.CodexStageAgent", _UnexpectedAgent)
+    monkeypatch.setattr("zetta.evolution.lifecycle.CodexStageAgent", _UnexpectedAgent)
 
     with pytest.raises(ValueError, match="false-positive rate 1 exceeds"):
         run_proposal_stage(

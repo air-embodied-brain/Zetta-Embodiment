@@ -1,15 +1,15 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 """Real RoboCasa observation -> GR00T deterministic action smoke."""
 
 from __future__ import annotations
 
-import argparse
 import os
+import argparse
 from pathlib import Path
 
 from robots.robocasa.env_client import RoboCasaEnvClient
 from robots.robocasa.groot_client import Gr00tClient
-from rpent.evolution.jsonio import atomic_write_json, canonical_sha256
+from zetta.evolution.jsonio import atomic_write_json, canonical_sha256
 
 
 def main() -> int:

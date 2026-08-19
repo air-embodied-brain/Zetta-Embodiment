@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 from __future__ import annotations
 
 import json
@@ -7,9 +7,9 @@ from typing import Any
 
 import pytest
 
-from rpent.evolution.jsonio import atomic_write_json, canonical_sha256, read_json
-from rpent.evolution.models import CausalDiagnosis, FailureCluster
-from rpent.evolution.stages import (
+from zetta.evolution.jsonio import atomic_write_json, canonical_sha256, read_json
+from zetta.evolution.models import CausalDiagnosis, FailureCluster
+from zetta.evolution.stages import (
     PROPOSAL_SYSTEM_PROMPT,
     CodexStageAgent,
     _candidate_from_payload,
@@ -20,7 +20,7 @@ from rpent.evolution.stages import (
     _validate_recovery_chunk_policy,
     _validate_recovery_tool_parameters,
 )
-from rpent.planner.base import PlannerResult
+from zetta.planner.base import PlannerResult
 
 
 def _cluster() -> FailureCluster:
@@ -304,7 +304,7 @@ def test_stage_recovers_completed_attempt_after_validator_fix(
     def fail_if_called(*args: object, **kwargs: object) -> None:
         raise AssertionError("provider must not be called for a recoverable attempt")
 
-    monkeypatch.setattr("rpent.evolution.stages.build_planner", fail_if_called)
+    monkeypatch.setattr("zetta.evolution.stages.build_planner", fail_if_called)
     def validate(value: dict[str, Any]) -> None:
         if value.get("accepted") is not True:
             raise ValueError("not accepted")
@@ -369,7 +369,7 @@ def test_stage1_task_contract_is_echoed_and_validated(tmp_path: Path, monkeypatc
             )
 
     monkeypatch.setattr(
-        "rpent.evolution.stages.build_planner", lambda *_args, **_kwargs: FakePlanner()
+        "zetta.evolution.stages.build_planner", lambda *_args, **_kwargs: FakePlanner()
     )
     diagnosis = CodexStageAgent(output_root=tmp_path).diagnose(
         cluster=_cluster(),
@@ -398,7 +398,7 @@ def test_stage1_rejects_task_contract_drift(tmp_path: Path, monkeypatch) -> None
             )
 
     monkeypatch.setattr(
-        "rpent.evolution.stages.build_planner", lambda *_args, **_kwargs: FakePlanner()
+        "zetta.evolution.stages.build_planner", lambda *_args, **_kwargs: FakePlanner()
     )
     with pytest.raises(ValueError, match="authoritative task contract"):
         CodexStageAgent(output_root=tmp_path).diagnose(
@@ -436,7 +436,7 @@ def test_stage2_resumes_the_exact_stage1_provider_thread(
             return FakePlanner(_diagnosis_payload(), "thread-stage-1", False)
         return FakePlanner(_candidate_payload(), "thread-stage-1", True)
 
-    monkeypatch.setattr("rpent.evolution.stages.build_planner", build)
+    monkeypatch.setattr("zetta.evolution.stages.build_planner", build)
     stage1_root = tmp_path / "diagnosis"
     first = CodexStageAgent(output_root=stage1_root)
     diagnosis = first.diagnose(
@@ -489,7 +489,7 @@ def test_failed_stage_can_append_a_changed_recovery_input(
             )
 
     monkeypatch.setattr(
-        "rpent.evolution.stages.build_planner", lambda *_args, **_kwargs: FakePlanner()
+        "zetta.evolution.stages.build_planner", lambda *_args, **_kwargs: FakePlanner()
     )
     result = CodexStageAgent(output_root=root)._invoke(
         stage="stage2-proposal",
@@ -520,7 +520,7 @@ def test_stage2_rejects_unobserved_critic_feature_before_commit(
             )
 
     monkeypatch.setattr(
-        "rpent.evolution.stages.build_planner", lambda *_args, **_kwargs: FakePlanner()
+        "zetta.evolution.stages.build_planner", lambda *_args, **_kwargs: FakePlanner()
     )
     root = tmp_path / "candidate"
     with pytest.raises(ValueError, match="were not observed"):
@@ -549,7 +549,7 @@ def test_stage2_receives_only_prompt_safe_provisional_authorization(
             )
 
     monkeypatch.setattr(
-        "rpent.evolution.stages.build_planner", lambda *_args, **_kwargs: FakePlanner()
+        "zetta.evolution.stages.build_planner", lambda *_args, **_kwargs: FakePlanner()
     )
     authorization = {
         "authorization_id": "provisional-123",
@@ -604,7 +604,7 @@ def test_formal_stage_attests_sol_high_in_prompt_and_audit(
         assert kwargs["reasoning_effort"] == "high"
         return FakePlanner()
 
-    monkeypatch.setattr("rpent.evolution.stages.build_planner", build)
+    monkeypatch.setattr("zetta.evolution.stages.build_planner", build)
     root = tmp_path / "formal-stage"
     CodexStageAgent(
         output_root=root,
@@ -642,7 +642,7 @@ def test_stage2_rejects_an_unchanged_failed_gate_mechanism(
             )
 
     monkeypatch.setattr(
-        "rpent.evolution.stages.build_planner", lambda *_args, **_kwargs: FakePlanner()
+        "zetta.evolution.stages.build_planner", lambda *_args, **_kwargs: FakePlanner()
     )
     root = tmp_path / "candidate"
     with pytest.raises(ValueError, match="rejected mechanism unchanged"):
@@ -694,7 +694,7 @@ def test_stage2_refinement_must_cite_paired_gate_evidence(
             )
 
     monkeypatch.setattr(
-        "rpent.evolution.stages.build_planner", lambda *_args, **_kwargs: FakePlanner()
+        "zetta.evolution.stages.build_planner", lambda *_args, **_kwargs: FakePlanner()
     )
     with pytest.raises(ValueError, match="did not cite rejected-gate evidence"):
         CodexStageAgent(output_root=tmp_path / "candidate").propose(
@@ -731,7 +731,7 @@ def test_stage2_refinement_may_retain_previous_candidate_evidence(
             )
 
     monkeypatch.setattr(
-        "rpent.evolution.stages.build_planner", lambda *_args, **_kwargs: FakePlanner()
+        "zetta.evolution.stages.build_planner", lambda *_args, **_kwargs: FakePlanner()
     )
     candidate = CodexStageAgent(output_root=tmp_path / "candidate").propose(
         generation=0,
@@ -775,7 +775,7 @@ def test_missing_provider_thread_is_reconstructed_append_only(
         calls.append(resume)
         return FakePlanner(resume)
 
-    monkeypatch.setattr("rpent.evolution.stages.build_planner", build)
+    monkeypatch.setattr("zetta.evolution.stages.build_planner", build)
     root = tmp_path / "candidate"
     agent = CodexStageAgent(
         output_root=root,
@@ -812,7 +812,7 @@ def test_semantically_invalid_stage_output_is_audited_but_not_committed(
             )
 
     monkeypatch.setattr(
-        "rpent.evolution.stages.build_planner", lambda *_args, **_kwargs: FakePlanner()
+        "zetta.evolution.stages.build_planner", lambda *_args, **_kwargs: FakePlanner()
     )
     root = tmp_path / "diagnosis"
     agent = CodexStageAgent(output_root=root)
@@ -842,7 +842,7 @@ def test_committed_output_recovers_context_without_reinvoking_provider(
             )
 
     monkeypatch.setattr(
-        "rpent.evolution.stages.build_planner", lambda *_args, **_kwargs: FakePlanner()
+        "zetta.evolution.stages.build_planner", lambda *_args, **_kwargs: FakePlanner()
     )
     root = tmp_path / "diagnosis"
     arguments = {

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 """Create one immutable, secret-free RoboCasa evolution preregistration."""
 
 from __future__ import annotations
@@ -20,19 +20,19 @@ from robots.robocasa.tool_bindings import binding_for_task  # noqa: E402
 from robots.robocasa.tool_catalog import (  # noqa: E402
     DEFAULT_ROBOCASA_TOOL_CATALOG,
 )
-from rpent.evolution.jsonio import (  # noqa: E402
+from zetta.evolution.jsonio import (  # noqa: E402
     atomic_write_json,
     canonical_sha256,
     file_sha256,
     read_json,
 )
-from rpent.evolution.models import (  # noqa: E402
+from zetta.evolution.models import (  # noqa: E402
     CampaignManifest,
     CandidateBundle,
     SafetyLayerConfig,
 )
-from rpent.evolution.schedule import preregister_seed_schedule  # noqa: E402
-from rpent.evolution.stages import (  # noqa: E402
+from zetta.evolution.schedule import preregister_seed_schedule  # noqa: E402
+from zetta.evolution.stages import (  # noqa: E402
     CLUSTER_SYSTEM_PROMPT,
     DIAGNOSIS_SYSTEM_PROMPT,
     PROPOSAL_SYSTEM_PROMPT,
@@ -43,13 +43,21 @@ def _rollout_command(args: argparse.Namespace) -> list[str]:
     script = (
         Path(args.repository_root).resolve() / "robots" / "robocasa" / "run_rollout.py"
     )
-    return [
-        os.path.abspath(os.fspath(args.runtime_python)),
+    command = [
+        str(Path(args.runtime_python).resolve()),
         str(script),
-        "--env-endpoint",
+        # The env slot lease still substitutes ``{env_endpoint}`` (see
+        # ``zetta.evolution.queue.SubprocessRolloutExecutor``), but after the
+        # Runtime v3 migration the leased address is the *shared rollout-runtime
+        # serve* endpoint, not a per-slot RoboCasa HTTP server: env slots are
+        # owned by the runtime's ``EnvPool`` and GR00T inference happens inside
+        # the runtime, so there is no second VLA endpoint to pass.
+        "--runtime-url",
         "{env_endpoint}",
-        "--vla-endpoint",
-        args.vla_endpoint,
+        "--policy-id",
+        args.policy_id,
+        "--env-pool-size",
+        str(args.env_pool_size),
         "--task",
         "{task}",
         "--split",
@@ -96,6 +104,11 @@ def _rollout_command(args: argparse.Namespace) -> list[str]:
         str(args.role1_max_turns),
         "--allow-privileged-tools",
     ]
+    # No ``--runtime-token``: the frozen command goes into the manifest, and a
+    # bearer token must never be recorded in a campaign artifact. ``run_rollout``
+    # reads ``ZETTA_RUNTIME_TOKEN`` from the inherited worker environment
+    # instead (README's "secrets only in env vars or external files").
+    return command
 
 
 def prepare(args: argparse.Namespace) -> dict[str, Any]:
@@ -104,7 +117,7 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
     output = Path(args.output_root).resolve()
     output.mkdir(parents=True, exist_ok=False)
     repository_root = Path(args.repository_root).resolve()
-    runtime_python = Path(os.path.abspath(os.fspath(args.runtime_python)))
+    runtime_python = Path(args.runtime_python).resolve()
     if not (repository_root / "robots" / "robocasa" / "run_rollout.py").is_file():
         raise ValueError("repository root has no RoboCasa rollout entrypoint")
     if not runtime_python.is_file():
@@ -269,9 +282,22 @@ def main() -> int:
     parser.add_argument("--no-progress-timeout-s", type=int, default=180)
     parser.add_argument("--target-valid-episodes-per-hour", type=float, default=25.0)
     parser.add_argument("--max-infrastructure-attempts", type=int, default=8)
-    parser.add_argument("--vla-endpoint", default="http://127.0.0.1:18811")
+    parser.add_argument(
+        "--policy-id",
+        default="groot",
+        help="Policy id served by the shared runtime's RolloutWorker.",
+    )
+    parser.add_argument(
+        "--env-pool-size",
+        type=int,
+        default=1,
+        help=(
+            "Initial env slots per env spec inside the shared runtime. It enters "
+            "the pool digest, so every rollout of this campaign uses this value."
+        ),
+    )
     parser.add_argument("--max-actions", type=int, default=1000)
-    parser.add_argument("--actions-per-chunk", type=int, default=16)
+    parser.add_argument("--actions-per-chunk", type=int, default=8)
     parser.add_argument("--role1-planner", choices=("api", "codex"), default="api")
     parser.add_argument("--agent-model", default="gpt-5.6-sol")
     parser.add_argument("--role1-model", default="openai:gpt-5.6-sol")

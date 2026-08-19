@@ -17,11 +17,11 @@ sys.path.insert(0, str(REPO_ROOT))
 from robots.libero.env_client import LiberoEnvClient
 from robots.libero.toolkit import LiberoToolkit
 from robots.libero.tools import dump_state
-from rpent.utils.daemon import pick_free_port
-from rpent.utils.http_rpc import HttpRpcClient
-from rpent.utils.logging import init_output_dir
-from rpent.utils.sam3_client import UnavailableSam3Client
-from rpent.utils.vla_client import VLAClient
+from zetta.utils.daemon import pick_free_port
+from zetta.utils.http_rpc import HttpRpcClient
+from zetta.utils.logging import init_output_dir
+from zetta.utils.sam3_client import UnavailableSam3Client
+from zetta.utils.vla_client import VLAClient
 
 
 def wait_for_env_server(

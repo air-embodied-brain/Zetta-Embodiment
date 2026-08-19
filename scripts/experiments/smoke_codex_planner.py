@@ -1,4 +1,4 @@
-"""Smoke-test RPent's MCP bridge and Codex planner without a simulator episode."""
+"""Smoke-test Zetta's MCP bridge and Codex planner without a simulator episode."""
 from __future__ import annotations
 
 import argparse
@@ -9,10 +9,10 @@ from pathlib import Path
 
 import openai_codex
 
-from rpent.planner.codex import CodexPlanner
-from rpent.planner.utils.http_mcp_server import HttpMcpServer
-from rpent.tools.toolkit import Toolkit
-from rpent.utils.logging import init_output_dir
+from zetta.planner.codex import CodexPlanner
+from zetta.planner.utils.http_mcp_server import HttpMcpServer
+from zetta.tools.toolkit import Toolkit
+from zetta.utils.logging import init_output_dir
 
 
 def _write_result(path: Path, payload: dict[str, object]) -> None:
@@ -96,7 +96,7 @@ def main() -> int:
                     [
                         codex_bin,
                         "--config",
-                        f"mcp_servers.rpent.url={json.dumps(server.url)}",
+                        f"mcp_servers.zetta.url={json.dumps(server.url)}",
                         "mcp",
                         "list",
                         "--json",
@@ -140,9 +140,9 @@ def main() -> int:
     )
     result = planner.solve(
         system_prompt=(
-            "You are validating RPent's planner-to-tool bridge. Your only valid action "
-            "is a real MCP tool call to the RPent finish tool "
-            "(mcp__rpent__finish/finish) exactly once with status='success' and a short "
+            "You are validating Zetta's planner-to-tool bridge. Your only valid action "
+            "is a real MCP tool call to the Zetta finish tool "
+            "(mcp__zetta__finish/finish) exactly once with status='success' and a short "
             "summary stating that the MCP bridge works. Do not answer in text, do not "
             "claim success without the tool result, do not read or write files, and do "
             "not run shell commands."

@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "suite": "libero_goal_swap",
+  "task_id": 0,
+  "task_language": "Open the middle layer of the drawer",
+  "candidate_id": "stage2-refine-goal-progress-stagnation-authoritative-fallback-v2",
+  "source_promoted_bundle_sha256": "8941b7e30cad0ba997adbea04acdd26e7920c9ec73830a002753becc1026c8a6",
+  "source_optimization_iteration": 1,
+  "critic_rules": [
+    {
+      "rule_id": "critic-goal-progress-stagnant-distractor-v2",
+      "title": "Reject zero contracted-goal progress during distractor approach",
+      "feature": "privileged.task.goal.progress",
+      "operator": "stagnant",
+      "threshold": 0,
+      "dwell_steps": 3,
+      "cooldown_steps": 311,
+      "activation_conditions": [
+        {"feature": "privileged.available", "operator": "eq", "threshold": true},
+        {"feature": "privileged.task.semantic_available", "operator": "eq", "threshold": true},
+        {"feature": "privileged.task.goal.progress_available", "operator": "eq", "threshold": true},
+        {"feature": "privileged.entity.main_table_plate_region.distance_to_eef_m", "operator": "lt", "threshold": 0.35},
+        {"feature": "privileged.joint.wooden_cabinet_1_middle_level.normalized", "operator": "ge", "threshold": 0.9},
+        {"feature": "privileged.task.success", "operator": "eq", "threshold": false},
+        {"feature": "episode.terminated", "operator": "eq", "threshold": false},
+        {"feature": "episode.truncated", "operator": "eq", "threshold": false},
+        {"feature": "command.available", "operator": "eq", "threshold": true}
+      ],
+      "proposal": "Reject the current action and select recovery-middle-drawer-authoritative-v2 as an executable alternative.",
+      "safety_only": false,
+      "evidence_ids": [
+        "artifact-2f8b97397cd356b910109567c300d4a674cbcb5609ff4791264839921ae8b9d2",
+        "artifact-11b091a91cbb687b385915f518ca9f8b22c440095003f33147aa7a7d9f81143c",
+        "artifact-0bd085f9894178a596de6490928af5b84e6cb4ee2ebe6b3f4124f64a579934a0",
+        "artifact-0f5e1b9f44e50bd0f0659cc1411aee69127a29ca8780927387056aa0b5ff430a"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,119 @@
+# 8×A100 上的 maniskill preset（实现计划 M6 交付物 1 的验收档）。
+#
+# 与两份 a100 libero preset 的关系：**不参与**
+# `tests/runtime/test_ray_launch.py::test_the_two_a100_presets_differ_only_in_the_policy_backend`
+# 那个 A/B 不变量（那条只约束 a100_libero.yaml 与 a100_libero_pi05.yaml 这一对）。
+# 新增 preset 不受该约束，但也因此**不能**与 libero 的吞吐直接相减：不同家族、不同任务、
+# 不同动作空间，只有 §6.1 的采集方法是共用的。
+#
+# maniskill 与 libero 的两处配置面差别（声明见 core/env_registry.py 的 behavior 表）：
+#   1. device_kind=gpu_batched → EnvWorker **要占卡**，所以 env 也进
+#      cluster.component_placement（libero 是 CPU subproc，刻意不进）。
+#   2. core_form 默认给 lockstep_vector：GPU-batched 家族的自然形态就是一个 sapien
+#      scene 里放 num_envs 条 lane，这也是 SlotGroupCoalescer 真合批的形态。
+#      per_slot 形态同样支持（把这一行改掉即可），代价是每个 slot 一个独立 scene。
+
+env_family: maniskill
+env_config:
+  env_id: PickCube-v1
+  obs_mode: rgb
+  # pd_ee_delta_pose 是 7 维（3 位移 + 3 旋转 + 1 夹爪），与 VLA 的动作形状对得上。
+  control_mode: pd_ee_delta_pose
+  sim_backend: gpu
+  camera_height: 128
+  camera_width: 128
+  # rlinf 的 default 分支读 sensor_data["3rd_view_camera"]（SimplerEnv/bridge 任务才有），
+  # 通用 ManiSkill 任务的相机叫 base_camera，正是 simple 分支读的那个。
+  wrap_obs_mode: simple
+  # 默认分支要 is_src_obj_grasped / consecutive_grasp 这些 SimplerEnv 专属 info 键，
+  # 通用任务没有；raw 直接用环境自己的 reward。
+  reward_mode: raw
+  max_episode_steps: 100
+  action_dim: 7
+  chunk_size: 4
+  action_model_type: openpi
+  # "panda" 走 prepare_actions 的恒等分支（action_utils.py 的 `if "panda" in policy`），
+  # 即模型已经输出环境动作空间。
+  action_policy: panda_wristcam
+  auto_reset: false
+  ignore_terminations: false
+  return_all_frames: false
+  core_form: lockstep_vector
+
+cluster:
+  num_nodes: 1
+  component_placement:
+    # maniskill 的 env 在 GPU 上，所以它**要**声明硬件 rank（与 libero 相反）。
+    # 4 张卡跑 env，4 张卡跑 rollout。
+    env:
+      placement: "0-3"
+    rollout:
+      placement: "4-7"
+
+gateway:
+  gateway_epoch: 1
+  maintenance_interval_seconds: 1.0
+  default_lease_seconds: 1800.0
+  error_retention_seconds: 300.0
+  result_ttl_seconds: 300.0
+  heartbeat_timeout_seconds: 60.0
+  max_concurrency_per_rank: 32
+  metrics_namespace: rr
+
+transport:
+  kind: ray_channel
+  command_queue_size: 256
+  control_queue_size: 32
+  result_queue_size: 512
+  infer_request_queue_size: 256
+  infer_response_queue_size: 256
+  command_timeout_seconds: 600.0
+
+env_worker:
+  group_name: env
+  num_ranks: 4
+  # GPU-batched：占卡，所以走 packed（声明在 cluster.component_placement.env）。
+  placement_strategy: packed
+  # 向量形态下一个 rank 可以放多个 lane —— 这正是 lockstep_vector 的目的：
+  # 一个 sapien scene 里 4 条 lane，一次 chunk_step 推进全部。
+  max_sessions_per_rank: 4
+  default_pool_size: 4
+  seed_offset: 0
+  coalesce_slot_groups: true
+  # 攒批窗口：池内在跑的 lane 到齐就立刻发，所以它只是超时保护。
+  coalesce_window_ms: 200.0
+
+rollout_worker:
+  group_name: rollout
+  num_ranks: 4
+  placement_strategy: packed
+  tensor_parallel_size: 1
+  pipeline_parallel_size: 1
+  policy_id: fake
+  policy_family: fake
+  # 本档用 fake policy：M6 的目的是证明"家族接得上、capability 与实际行为一致、合批
+  # 真的发生"，而不是评测某个 maniskill VLA 的成功率（镜像里没有 maniskill 的权重）。
+  policy_backend: fake
+  device: cuda
+  dtype: bfloat16
+  max_concurrent_inferences: 32
+  scheduler:
+    max_batch_size: 8
+    max_wait_ms: 20.0
+    max_queue_depth: 256
+    max_inflight_per_application: 128
+    max_inflight_per_session: 1
+    fixed_batch_size: null
+
+admission:
+  require_auth: false
+  tokens: {}
+  max_sessions_per_application: 64
+  max_inflight_operations_per_application: 256
+  max_inflight_operations_per_session: 2
+  max_total_inflight_operations: 512
+
+payload:
+  inline_threshold_bytes: 262144
+  request_limit_bytes: 8388608
+  image_codec: png

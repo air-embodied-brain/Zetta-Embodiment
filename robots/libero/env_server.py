@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 """RPC server wrapping a single-env LIBERO environment."""
 from __future__ import annotations
 
@@ -15,14 +15,10 @@ from robots.libero.critic_runtime import (
     critic_rules_from_payload,
     extract_libero_critic_features,
 )
-from rpent.evolution.critic import TemporalCritic
-from rpent.evolution.jsonio import canonical_sha256
-from rpent.utils.config import (
-    get_repo_root,
-    get_rlinf_repo_path,
-)
-from rpent.utils.logging import get_logger
-from rpent.utils.rpc import RpcFacade
+from zetta.evolution.critic import TemporalCritic
+from zetta.evolution.jsonio import canonical_sha256
+from zetta.utils.logging import get_logger
+from zetta.utils.rpc import RpcFacade
 
 # MuJoCo env vars must be set BEFORE importing anything that touches MuJoCo.
 os.environ.setdefault("MUJOCO_GL", "egl")
@@ -32,17 +28,13 @@ assert "mujoco" not in sys.modules, \
 
 logger = get_logger("env_server")
 
-RPENT_ROOT = get_repo_root()
-RLINF_REPO_PATH = get_rlinf_repo_path() or (RPENT_ROOT.parent / "rlinf").resolve()
-if str(RLINF_REPO_PATH) not in sys.path:
-    sys.path.insert(0, str(RLINF_REPO_PATH))
 os.environ.setdefault("ROBOT_PLATFORM", "LIBERO")
 
 # torch and LiberoEnv are only imported at call time (after --cuda-device
 # sets CUDA_VISIBLE_DEVICES in main()); LiberoEnv transitively imports torch.
 if TYPE_CHECKING:
     import torch  # noqa: F401  (referenced at runtime in _to_numpy_tree)
-    from rlinf.envs.libero.libero_env import LiberoEnv
+    from zetta.envs.libero.environment import LiberoEnv
 
 
 # ---------------------------------------------------------------------------
@@ -108,11 +100,11 @@ def build_env_cfg(
 def make_env(task_id: int, seed: int, suite_name: str = "libero_spatial",
              max_episode_steps: int = 10000) -> LiberoEnv:
     """Build a single-env LiberoEnv pinned to ``task_id`` / ``seed``."""
-    from robots.libero.rlinf_worker_compat import install_rlinf_env_call_compat
+    from robots.libero.rlinf_worker_compat import install_env_call_bridge
 
-    install_rlinf_env_call_compat()
-    from rlinf.envs.libero.libero_env import LiberoEnv
-    from rlinf.envs.libero.utils import benchmark as _bench_mod
+    install_env_call_bridge()
+    from zetta.envs.libero.environment import LiberoEnv
+    from zetta.envs.libero.utils import get_benchmark_overridden
 
     from robots.libero.privileged_sensors import install_libero_contact_extension
 
@@ -123,7 +115,7 @@ def make_env(task_id: int, seed: int, suite_name: str = "libero_spatial",
     # Attach the privileged current-contact sensor before RLinF starts its
     # robosuite subprocess. It has a force/tactile analogue on real hardware.
     install_libero_contact_extension(LiberoEnv)
-    suite = _bench_mod.get_benchmark(suite_name)()
+    suite = get_benchmark_overridden(suite_name)()
     first_id = sum(len(suite.get_task_init_states(t)) for t in range(task_id))
     trials = len(suite.get_task_init_states(task_id))
     rid = first_id + (seed % trials)
@@ -462,7 +454,7 @@ class LiberoEnvFacade(RpcFacade):
         worker = self._env.env.workers[self._env_idx]
         return _to_numpy_tree(
             worker.env_call(
-                "rpent_privileged_contacts",
+                "zetta_privileged_contacts",
                 kwargs={
                     "include_all_contacts": bool(include_all_contacts),
                     "max_contacts": int(max_contacts),
@@ -488,7 +480,7 @@ class LiberoEnvFacade(RpcFacade):
         worker = self._env.env.workers[self._env_idx]
         return _to_numpy_tree(
             worker.env_call(
-                "rpent_privileged_semantic_joint_plan",
+                "zetta_privileged_semantic_joint_plan",
                 kwargs={
                     "entity": str(entity),
                     "joint": str(joint),
@@ -510,7 +502,7 @@ class LiberoEnvFacade(RpcFacade):
         worker = workers[self._env_idx]
         return _to_numpy_tree(
             worker.env_call(
-                "rpent_privileged_critic_state",
+                "zetta_privileged_critic_state",
                 kwargs={"reset_tracker": bool(reset_tracker)},
                 target="self",
             )
@@ -606,7 +598,7 @@ def main():
                 prev, args.cuda_device,
             )
             os.environ.pop("CUDA_VISIBLE_DEVICES", None)
-        from rpent.utils.egl import configure_egl_device
+        from zetta.utils.egl import configure_egl_device
         configure_egl_device(args.cuda_device)
         import torch
         torch.cuda.set_device(args.cuda_device)

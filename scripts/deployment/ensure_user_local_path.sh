@@ -3,7 +3,7 @@ set -euo pipefail
 
 line='export PATH="$HOME/.local/bin:$PATH"'
 if ! grep -Fqx "$line" "$HOME/.bashrc"; then
-  cp -p "$HOME/.bashrc" "$HOME/.bashrc.rpent-backup-20260803"
+  cp -p "$HOME/.bashrc" "$HOME/.bashrc.zetta-backup-20260803"
   sed -i '1iexport PATH="$HOME/.local/bin:$PATH"' "$HOME/.bashrc"
 fi
 

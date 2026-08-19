@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 """Run or inspect an append-only paired candidate gate scheduler."""
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 if str(REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(REPOSITORY_ROOT))
 
-from rpent.evolution.gate_runner import (  # noqa: E402
+from zetta.evolution.gate_runner import (  # noqa: E402
     CandidateGateRunner,
     PairedGateRunner,
 )

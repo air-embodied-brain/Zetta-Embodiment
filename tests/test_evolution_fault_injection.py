@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 from __future__ import annotations
 
 import json
@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from rpent.evolution.campaign import analyze_failures
-from rpent.evolution.fault_injection import (
+from zetta.evolution.campaign import analyze_failures
+from zetta.evolution.fault_injection import (
     STAGE_ORDER,
     CampaignFaultHarness,
     FaultPoint,
@@ -17,9 +17,9 @@ from rpent.evolution.fault_injection import (
     create_fault_plan,
     main,
 )
-from rpent.evolution.jsonio import atomic_write_json, read_json
-from rpent.evolution.lifecycle import promote_and_complete, record_gate_and_advance
-from rpent.evolution.models import (
+from zetta.evolution.jsonio import atomic_write_json, read_json
+from zetta.evolution.lifecycle import promote_and_complete, record_gate_and_advance
+from zetta.evolution.models import (
     CampaignManifest,
     CampaignPhase,
     CandidateBundle,
@@ -31,7 +31,7 @@ from rpent.evolution.models import (
     RecoveryRule,
     RecoveryStep,
 )
-from rpent.evolution.store import CampaignStore
+from zetta.evolution.store import CampaignStore
 
 
 def _manifest(*, parent: str | None = None) -> CampaignManifest:

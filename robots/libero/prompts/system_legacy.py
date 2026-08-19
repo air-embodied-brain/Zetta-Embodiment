@@ -1,4 +1,4 @@
-"""ARCHIVED legacy RPent LIBERO prompt; intentionally unused by the runtime.
+"""ARCHIVED legacy Zetta LIBERO prompt; intentionally unused by the runtime.
 
 This file preserves the task-indexed, seed-0-tuned prompt for historical
 reproduction. ``robots.libero.prompt_bundle`` imports ``system.py``, never this

@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 """Process-local persistent RGB renderer for long RoboSuite episodes.
 
 The installed RoboSuite patch isolates RGB from the shared depth framebuffer,
@@ -15,9 +15,9 @@ from typing import Any
 
 import numpy as np
 
-PATCH_MARKER = "rpent_persistent_rgb_renderer_v1"
-_RENDERER_ATTR = "_rpent_persistent_rgb_renderer"
-_RENDERER_SIZE_ATTR = "_rpent_persistent_rgb_renderer_size"
+PATCH_MARKER = "zetta_persistent_rgb_renderer_v1"
+_RENDERER_ATTR = "_zetta_persistent_rgb_renderer"
+_RENDERER_SIZE_ATTR = "_zetta_persistent_rgb_renderer_size"
 
 
 def install_persistent_rgb_renderer(
@@ -33,7 +33,7 @@ def install_persistent_rgb_renderer(
         import mujoco as mujoco_module
 
     sim_class = binding_utils_module.MjSim
-    existing = getattr(sim_class, "_rpent_rgb_renderer_patch", None)
+    existing = getattr(sim_class, "_zetta_rgb_renderer_patch", None)
     if existing == PATCH_MARKER:
         return {
             "installed": True,
@@ -104,8 +104,8 @@ def install_persistent_rgb_renderer(
 
     persistent_render.__name__ = original_render.__name__
     persistent_render.__doc__ = original_render.__doc__
-    setattr(sim_class, "_rpent_original_render", original_render)
-    setattr(sim_class, "_rpent_rgb_renderer_patch", PATCH_MARKER)
+    setattr(sim_class, "_zetta_original_render", original_render)
+    setattr(sim_class, "_zetta_rgb_renderer_patch", PATCH_MARKER)
     sim_class.render = persistent_render
     return {
         "installed": True,

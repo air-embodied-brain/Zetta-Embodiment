@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 """Durable RoboCasa rollout video artifacts.
 
 The live renderer may reuse its framebuffer, and piping long-lived raw frames
@@ -312,7 +312,7 @@ class EpisodeVideoArtifacts:
             for name, spec in STREAM_SPECS.items()
         }
         report: dict[str, Any] = {
-            "schema_version": "rpent-robocasa-video-artifacts-v2",
+            "schema_version": "zetta-robocasa-video-artifacts-v2",
             "status": "unavailable",
             "frame_rate": self.frame_rate,
             "source_image_directory": str(self.image_dir),

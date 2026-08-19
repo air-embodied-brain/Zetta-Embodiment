@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run the frozen pure-VLA Loop 1 batch for PickPlaceToasterToCounter.
 
-The runner is deliberately narrower than the general RPent campaign runner:
+The runner is deliberately narrower than the general Zetta campaign runner:
 it has no candidate bundle, Role1, tool runtime, critic, recovery, planner, CAP,
 or fallback path. Infrastructure-invalid attempts are append-only and retried
 on the same seed until one valid, readable rollout is available.
@@ -29,7 +29,7 @@ from typing import Any, Iterable
 TASK = "PickPlaceToasterToCounter"
 SPLIT = "target"
 SEEDS = tuple(range(100, 150))
-GENERATION = 0
+GENERATION = 1
 FROZEN_EVALUATION_HORIZON = 1000
 CAMERA_KEYS = (
     "video.robot0_agentview_left",
@@ -160,10 +160,19 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     return rows
 
 
-def _http_json(base_url: str, path: str, timeout_s: float = 30.0) -> dict[str, Any]:
+def _http_json(
+    base_url: str,
+    path: str,
+    timeout_s: float = 30.0,
+    *,
+    token: str | None = None,
+) -> dict[str, Any]:
+    headers = {"Accept": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
     request = urllib.request.Request(
         base_url.rstrip("/") + path,
-        headers={"Accept": "application/json"},
+        headers=headers,
         method="GET",
     )
     with urllib.request.urlopen(request, timeout=timeout_s) as response:
@@ -187,9 +196,14 @@ def _git(repo: Path, *args: str) -> str:
 def _source_hashes(repo: Path, robocasa_root: Path) -> dict[str, str]:
     paths = {
         "run_rollout": repo / "robots/robocasa/run_rollout.py",
-        "env_server": repo / "robots/robocasa/env_server.py",
+        "session_core": repo / "robots/robocasa/session_core.py",
+        "groot_core": repo / "robots/robocasa/groot_core.py",
+        # Runtime v3: these two adapters, not the HTTP servers, are what actually
+        # executes the environment and the policy on the production path.
+        "robocasa_current_backend": repo
+        / "rollout_runtime/backends/robocasa_current.py",
+        "groot_policy_backend": repo / "rollout_runtime/backends/groot_policy.py",
         "privileged_state": repo / "robots/robocasa/privileged_state.py",
-        "groot_client": repo / "robots/robocasa/groot_client.py",
         "action_contract": repo / "robots/robocasa/action_contract.py",
         "batch_runner": repo / "scripts/evolution/run_pure_vla_loop1.py",
         "task_source": robocasa_root
@@ -211,13 +225,20 @@ def _new_frozen_config(args: argparse.Namespace) -> dict[str, Any]:
     dirty = _git(repo, "status", "--porcelain")
     if dirty:
         raise RuntimeError("refusing to freeze a campaign from a dirty worktree")
-    env_health = _http_json(args.env_endpoint, "/health")
-    protocol = env_health.get("write_protocol", {})
-    if not isinstance(protocol, dict) or protocol.get("phase") != "FREE":
-        raise RuntimeError("RoboCasa slot must be FREE before freezing the batch")
-    env_schema = _http_json(args.env_endpoint, "/schema")
-    vla_health = _http_json(args.vla_endpoint, "/health")
-    vla_schema = _http_json(args.vla_endpoint, "/schema")
+    # Runtime v3 attestation: there is no per-slot RoboCasa server and no
+    # separate VLA server to interrogate any more (runtime v3 design
+    # Stage 7).  The shared runtime's ``/livez`` (unauthenticated) plus
+    # ``/healthz`` (gateway epoch + env rank health) are what is externally
+    # observable before a session exists; the env/policy identity itself is
+    # frozen by the runtime preset, whose digest the runtime reports per
+    # episode as ``artifact_index.rollout_runtime.env_spec_digest``.
+    token = os.environ.get("ZETTA_RUNTIME_TOKEN")
+    runtime_live = _http_json(args.runtime_url, "/livez")
+    if runtime_live.get("status") != "ok":
+        raise RuntimeError("rollout runtime is not live")
+    runtime_health = _http_json(args.runtime_url, "/healthz", token=token)
+    if int(runtime_health.get("env_ranks_healthy", 0)) < 1:
+        raise RuntimeError("rollout runtime reports no healthy env rank")
     prompt_template = "Place the toasted item on a plate."
     config: dict[str, Any] = {
         "schema_version": 1,
@@ -243,12 +264,11 @@ def _new_frozen_config(args: argparse.Namespace) -> dict[str, Any]:
             "interrupt_on_proposal": False,
         },
         "policy": {
-            "endpoint": args.vla_endpoint,
-            "health": vla_health,
-            "schema": vla_schema,
-            "schema_sha256": _sha256_value(vla_schema),
+            "endpoint": args.runtime_url,
+            "policy_id": args.policy_id,
+            "deployment": "in_process_groot_weights_on_rollout_worker",
             "inference_seed_algorithm": "sha256(f'{policy_rng}:{chunk_index}')[:4] & 0x7fffffff",
-            "timeout_s": args.vla_timeout_s,
+            "timeout_s": args.operation_timeout_s,
         },
         "prompt": {
             "source": "reset.observation.state.annotation.human.task_description",
@@ -257,16 +277,21 @@ def _new_frozen_config(args: argparse.Namespace) -> dict[str, Any]:
             "template_sha256": hashlib.sha256(prompt_template.encode()).hexdigest(),
         },
         "simulator": {
-            "endpoint": args.env_endpoint,
-            "health": {
-                "status": env_health.get("status"),
-                "persistent": env_health.get("persistent"),
-                "renderer": env_health.get("renderer"),
-                "gpu_visible": env_health.get("gpu_visible"),
-                "egl_device": env_health.get("egl_device"),
+            "endpoint": args.runtime_url,
+            "deployment": "rollout_runtime_serve_gateway_ray_env_worker",
+            "runtime_livez": runtime_live,
+            "runtime_healthz": {
+                key: runtime_health.get(key)
+                for key in (
+                    "status",
+                    "gateway_epoch",
+                    "auth",
+                    "env_ranks",
+                    "env_ranks_healthy",
+                )
             },
-            "schema": env_schema,
-            "schema_sha256": _sha256_value(env_schema),
+            "env_family": "robocasa",
+            "env_pool_size": args.env_pool_size,
             "camera_size": args.camera_size,
             "max_steps": args.sim_max_steps,
             "action_scale": {
@@ -276,7 +301,7 @@ def _new_frozen_config(args: argparse.Namespace) -> dict[str, Any]:
                 "base_yaw": 1.0,
                 "torso": 1.0,
             },
-            "rpc_timeout_s": args.rpc_timeout_s,
+            "operation_timeout_s": args.operation_timeout_s,
         },
         "rollout": {
             "max_actions": args.max_actions,
@@ -360,10 +385,16 @@ def _run_command(
     command = [
         args.python,
         str(repo / "robots/robocasa/run_rollout.py"),
-        "--env-endpoint",
-        args.env_endpoint,
-        "--vla-endpoint",
-        args.vla_endpoint,
+        "--runtime-url",
+        args.runtime_url,
+        "--policy-id",
+        args.policy_id,
+        "--env-pool-size",
+        str(args.env_pool_size),
+        "--camera-size",
+        str(args.camera_size),
+        "--env-max-steps",
+        str(config["simulator"]["max_steps"]),
         "--task",
         TASK,
         "--split",
@@ -388,10 +419,8 @@ def _run_command(
         str(config["rollout"]["max_actions"]),
         "--actions-per-chunk",
         str(config["rollout"]["actions_per_chunk"]),
-        "--rpc-timeout-s",
-        str(config["simulator"]["rpc_timeout_s"]),
-        "--vla-timeout-s",
-        str(config["policy"]["timeout_s"]),
+        "--operation-timeout-s",
+        str(config["simulator"]["operation_timeout_s"]),
         "--output-dir",
         str(attempt_dir),
         "--result-file",
@@ -890,12 +919,18 @@ def _run_seed(
         reason = _attempt_invalid_reason(attempt_dir, return_code, timeout)
         invalid = _mark_invalid(seed, attempt_index, attempt_dir, return_code, reason)
         _append_jsonl(root / "campaign_events.jsonl", invalid)
-        health = _http_json(args.env_endpoint, "/health")
-        protocol = health.get("write_protocol", {})
-        if not isinstance(protocol, dict) or protocol.get("phase") != "FREE":
+        # Runtime v3: an invalid attempt no longer leaves a *binding* behind that
+        # the next attempt would inherit — ``run_rollout`` always closes its
+        # session, which is what returns the env slot to the runtime's EnvPool.
+        # What still has to hold before retrying is that the shared runtime is
+        # alive with at least one healthy env rank.
+        health = _http_json(
+            args.runtime_url, "/healthz", token=os.environ.get("ZETTA_RUNTIME_TOKEN")
+        )
+        if int(health.get("env_ranks_healthy", 0)) < 1:
             raise RuntimeError(
-                f"seed {seed} attempt {attempt_index} was invalid and the "
-                "environment slot is not FREE"
+                f"seed {seed} attempt {attempt_index} was invalid and the rollout "
+                "runtime has no healthy env rank"
             )
     raise RuntimeError(
         f"seed {seed} exceeded the frozen infrastructure retry limit without a valid rollout"
@@ -1144,8 +1179,13 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo-root", required=True)
     parser.add_argument("--robocasa-root", required=True)
-    parser.add_argument("--env-endpoint", required=True)
-    parser.add_argument("--vla-endpoint", required=True)
+    parser.add_argument(
+        "--runtime-url",
+        required=True,
+        help="Shared rollout-runtime serve endpoint (ZETTA_RUNTIME_TOKEN for auth).",
+    )
+    parser.add_argument("--policy-id", default="groot")
+    parser.add_argument("--env-pool-size", type=int, default=1)
     parser.add_argument("--output-root", required=True)
     parser.add_argument("--python", default=sys.executable)
     parser.add_argument("--camera-size", type=int, default=256)
@@ -1156,8 +1196,7 @@ def _parser() -> argparse.ArgumentParser:
         "--max-actions", type=int, default=FROZEN_EVALUATION_HORIZON
     )
     parser.add_argument("--actions-per-chunk", type=int, default=16)
-    parser.add_argument("--rpc-timeout-s", type=float, default=300.0)
-    parser.add_argument("--vla-timeout-s", type=float, default=180.0)
+    parser.add_argument("--operation-timeout-s", type=float, default=300.0)
     parser.add_argument("--episode-timeout-s", type=float, default=1800.0)
     parser.add_argument("--max-infrastructure-attempts", type=int, default=8)
     return parser

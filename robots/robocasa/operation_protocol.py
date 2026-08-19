@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 """Idempotent write envelope for a persistent RoboCasa environment.
 
 Transport timeout is not cancellation: a physical action may already have

@@ -10,17 +10,17 @@ if [[ $# -lt 1 ]]; then
   exit 64
 fi
 
-: "${RPENT_LIBERO_REPO:?RPENT_LIBERO_REPO must point to the detached worktree}"
-: "${RPENT_ROLLOUT_RUNTIME_ENV:?RPENT_ROLLOUT_RUNTIME_ENV must point to runtime.env}"
-: "${RPENT_EVOLUTION_SITE:?RPENT_EVOLUTION_SITE must point to the frozen site overlay}"
+: "${ZETTA_LIBERO_REPO:?ZETTA_LIBERO_REPO must point to the detached worktree}"
+: "${ZETTA_ROLLOUT_RUNTIME_ENV:?ZETTA_ROLLOUT_RUNTIME_ENV must point to runtime.env}"
+: "${ZETTA_EVOLUTION_SITE:?ZETTA_EVOLUTION_SITE must point to the frozen site overlay}"
 
-source "${RPENT_ROLLOUT_RUNTIME_ENV}"
-if [[ -n "${RPENT_PROVIDER_ENV:-}" && -r "${RPENT_PROVIDER_ENV}" ]]; then
-  source "${RPENT_PROVIDER_ENV}"
+source "${ZETTA_ROLLOUT_RUNTIME_ENV}"
+if [[ -n "${ZETTA_PROVIDER_ENV:-}" && -r "${ZETTA_PROVIDER_ENV}" ]]; then
+  source "${ZETTA_PROVIDER_ENV}"
 fi
 
 # runtime.env may contain a historical PYTHONPATH for other suites. LIBERO
 # must resolve the detached worktree first and use only the audited overlay.
-export PYTHONPATH="${RPENT_LIBERO_REPO}:${RPENT_EVOLUTION_SITE}"
+export PYTHONPATH="${ZETTA_LIBERO_REPO}:${ZETTA_EVOLUTION_SITE}"
 
 exec "$@"

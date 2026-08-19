@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 """Run the recoverable rollout-evolution state machine until a terminal result.
 
 Preparation remains adapter-owned: this entrypoint consumes the immutable
@@ -7,6 +7,15 @@ manifest and tool catalog emitted by an environment adapter. Once prepared,
 one invocation resumes Rollout -> Cluster -> Diagnose -> Proposal -> Shadow
 Replay -> Same-seed -> Held-out -> Reject/Promote, including child generations
 when ``--max-generations`` is greater than one.
+
+Exit codes: ``0`` terminal success (or a bounded ``--once`` step); ``3`` the
+``--max-steps`` budget was exhausted without reaching a terminal state; ``4``
+every remaining rollout in the current generation has exhausted
+``max_infrastructure_attempts`` with nothing else in flight, so no further
+polling can make progress (fail closed instead of looping forever; see
+``EvolutionSupervisor.step()``'s ``rollout_blocked_on_infrastructure`` action
+and ``CandidateGateRunner.authorize_infrastructure_recovery`` for the
+same-seed/regression/held-out equivalent recovery path).
 """
 
 from __future__ import annotations
@@ -23,10 +32,10 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 if str(REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(REPOSITORY_ROOT))
 
-from rpent.evolution.jsonio import read_json  # noqa: E402
-from rpent.evolution.models import CampaignPhase, CampaignManifest  # noqa: E402
-from rpent.evolution.store import CampaignStore  # noqa: E402
-from rpent.evolution.supervisor import EvolutionSupervisor  # noqa: E402
+from zetta.evolution.jsonio import read_json  # noqa: E402
+from zetta.evolution.models import CampaignPhase, CampaignManifest  # noqa: E402
+from zetta.evolution.store import CampaignStore  # noqa: E402
+from zetta.evolution.supervisor import EvolutionSupervisor  # noqa: E402
 
 
 def _workers(value: str) -> tuple[str, ...]:
@@ -141,6 +150,14 @@ def main() -> int:
                     "phase_after": CampaignStore(root).state()["phase"],
                 }
             )
+            if report.get("action") == "rollout_blocked_on_infrastructure":
+                # Every remaining rollout has exhausted
+                # ``max_infrastructure_attempts`` with nothing else in flight:
+                # polling again can never make progress. Fail closed with a
+                # distinct exit code instead of looping forever; recovery
+                # requires an operator decision (raise the budget and
+                # re-run, or investigate the infrastructure failure).
+                return 4
             if args.once:
                 return 0
             if report.get("action", "").startswith("waiting_") and args.poll_s:

@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 """Fault-injection tests for leased rollout queue recovery."""
 
 from __future__ import annotations
@@ -10,12 +10,12 @@ from pathlib import Path
 
 import pytest
 
-import rpent.evolution.queue as queue_module
-from rpent.evolution.campaign import _known_job_ids, ingest_queue_results
-from rpent.evolution.jsonio import atomic_write_json, read_json
-from rpent.evolution.models import CampaignManifest, EpisodeRecord
-from rpent.evolution.queue import RolloutJob, SharedHostQueue, run_worker
-from rpent.evolution.store import CampaignStore
+import zetta.evolution.queue as queue_module
+from zetta.evolution.campaign import _known_job_ids, ingest_queue_results
+from zetta.evolution.jsonio import atomic_write_json, read_json
+from zetta.evolution.models import CampaignManifest, EpisodeRecord
+from zetta.evolution.queue import RolloutJob, SharedHostQueue, run_worker
+from zetta.evolution.store import CampaignStore
 
 
 def _job(tmp_path: Path, *, job_id: str = "job-authoritative") -> RolloutJob:

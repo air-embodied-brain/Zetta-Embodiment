@@ -13,7 +13,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from robots.libero.contact_graspnet import ContactGraspNetAdapter
 from robots.libero.graspgen import GraspGenAdapter
-from rpent.utils.logging import init_output_dir
+from zetta.utils.logging import init_output_dir
 
 
 def main() -> None:

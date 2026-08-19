@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 """Issue secret-free health probes for every configured model route."""
 
 from __future__ import annotations
@@ -124,13 +124,13 @@ def main() -> int:
         help="probe the production broker wire by default; native is diagnostic only",
     )
     parser.add_argument(
-        "--model", default=os.environ.get("RPENT_PROVIDER_MODEL", DEFAULT_MODEL)
+        "--model", default=os.environ.get("ZETTA_PROVIDER_MODEL", DEFAULT_MODEL)
     )
     parser.add_argument(
         "--reasoning-effort",
         choices=_ALLOWED_REASONING_EFFORTS,
         default=os.environ.get(
-            "RPENT_PROVIDER_REASONING_EFFORT", DEFAULT_REASONING_EFFORT
+            "ZETTA_PROVIDER_REASONING_EFFORT", DEFAULT_REASONING_EFFORT
         ),
     )
     args = parser.parse_args()
@@ -140,11 +140,11 @@ def main() -> int:
         )
     if args.timeout_s <= 0:
         raise ValueError("probe concurrency and timeout must be positive")
-    raw = os.environ.get("RPENT_API_PROVIDERS", "")
+    raw = os.environ.get("ZETTA_API_PROVIDERS", "")
     config = json.loads(raw)
     providers = config.get("providers") if isinstance(config, dict) else config
     if not isinstance(providers, list) or not providers:
-        raise ValueError("RPENT_API_PROVIDERS has no routes")
+        raise ValueError("ZETTA_API_PROVIDERS has no routes")
     with ThreadPoolExecutor(max_workers=min(args.concurrency, len(providers))) as pool:
         results = list(
             pool.map(

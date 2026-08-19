@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 """Deterministic GR00T HTTP client for RoboCasa observations."""
 
 from __future__ import annotations

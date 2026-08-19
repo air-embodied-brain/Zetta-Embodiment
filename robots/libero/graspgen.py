@@ -1,5 +1,5 @@
-# Copyright (c) 2026 RPent Contributors
-"""Sensor-only, proposal-only GraspGen adapter for RPent LIBERO."""
+# Copyright (c) 2026 Zetta Contributors
+"""Sensor-only, proposal-only GraspGen adapter for Zetta LIBERO."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from robots.libero.contact_graspnet import (
     camera_point_cloud,
     transform_grasp_candidates,
 )
-from rpent.utils.logging import get_output_dir
+from zetta.utils.logging import get_output_dir
 
 
 def _cap_points(points: np.ndarray, max_points: int) -> np.ndarray:

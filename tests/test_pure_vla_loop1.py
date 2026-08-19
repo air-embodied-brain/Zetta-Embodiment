@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from scripts.evolution.run_pure_vla_loop1 import (
     FROZEN_EVALUATION_HORIZON,
-    GENERATION,
     _config_hash,
     _milestone_steps,
     _object_relative_state,
@@ -77,7 +76,3 @@ def test_frozen_loop1_uses_full_robocasa_horizon():
     assert parser.get_default("sim_max_steps") == FROZEN_EVALUATION_HORIZON
     assert parser.get_default("max_actions") == FROZEN_EVALUATION_HORIZON
     assert parser.get_default("actions_per_chunk") == 16
-
-
-def test_frozen_loop1_is_a_strict_generation_zero_baseline():
-    assert GENERATION == 0

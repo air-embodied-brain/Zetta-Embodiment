@@ -1,9 +1,9 @@
-# Copyright (c) 2026 RPent Contributors
-"""RPent RPC adapter for the official Fast-WAM LIBERO checkpoint.
+# Copyright (c) 2026 Zetta Contributors
+"""Zetta RPC adapter for the official Fast-WAM LIBERO checkpoint.
 
 Fast-WAM is kept in an isolated environment because its Wan/Torch dependency
-stack differs from RPent.  The adapter uses the official model, processor,
-normalization statistics, and LIBERO action convention while exposing RPent's
+stack differs from Zetta.  The adapter uses the official model, processor,
+normalization statistics, and LIBERO action convention while exposing Zetta's
 standard ``predict`` protocol.  Optional predicted-future videos are persisted
 as immutable intermediate evidence on the server.
 """
@@ -21,8 +21,8 @@ import imageio.v2 as imageio
 import numpy as np
 
 from robots.libero.runtime_devices import vla_runtime_info
-from rpent.utils.logging import get_logger
-from rpent.utils.rpc import RpcFacade
+from zetta.utils.logging import get_logger
+from zetta.utils.rpc import RpcFacade
 
 logger = get_logger("fastwam_vla_server")
 

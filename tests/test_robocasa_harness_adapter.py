@@ -58,7 +58,7 @@ def test_adapter_translates_policy_and_preserves_proposal_only_boundary():
     assert adapter.registry.last_policy.max_risk_level == "critical"
 
 
-def test_adapter_rejects_tool_outside_rpent_allowlist():
+def test_adapter_rejects_tool_outside_zetta_allowlist():
     adapter = _adapter("robocasa.gripper.release")
     with pytest.raises(ToolPolicyError, match="denied"):
         adapter.invoke(
@@ -120,7 +120,7 @@ def test_adapter_uses_an_audited_builtin_fallback_for_incremental_deployment():
 
 
 def test_adapter_requires_an_explicit_complete_snapshot(tmp_path, monkeypatch):
-    monkeypatch.delenv("RPENT_ROBOCASA_HARNESS_ROOT", raising=False)
+    monkeypatch.delenv("ZETTA_ROBOCASA_HARNESS_ROOT", raising=False)
     with pytest.raises(HarnessRuntimeUnavailable, match="requires"):
         HarnessToolRuntimeAdapter.from_root()
     with pytest.raises(HarnessRuntimeUnavailable, match="incomplete"):

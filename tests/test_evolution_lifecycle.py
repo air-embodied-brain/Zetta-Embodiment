@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 from __future__ import annotations
 
 from dataclasses import replace
@@ -7,9 +7,9 @@ from pathlib import Path
 import pytest
 
 from robots.robocasa.slide_dishwasher_program import CONTACT_PUSH_TOOL
-from rpent.evolution.campaign import analyze_failures
-from rpent.evolution.jsonio import atomic_write_json, canonical_sha256, read_json
-from rpent.evolution.lifecycle import (
+from zetta.evolution.campaign import analyze_failures
+from zetta.evolution.jsonio import atomic_write_json, canonical_sha256, read_json
+from zetta.evolution.lifecycle import (
     _agent_artifact_context,
     _authoritative_task_contract,
     _latest_stage2_context,
@@ -25,7 +25,7 @@ from rpent.evolution.lifecycle import (
     run_diagnosis_stage,
     run_proposal_stage,
 )
-from rpent.evolution.models import (
+from zetta.evolution.models import (
     CampaignManifest,
     CampaignPhase,
     CandidateBundle,
@@ -37,7 +37,7 @@ from rpent.evolution.models import (
     RecoveryRule,
     RecoveryStep,
 )
-from rpent.evolution.store import CampaignStore
+from zetta.evolution.store import CampaignStore
 
 
 def _manifest() -> CampaignManifest:
@@ -207,7 +207,7 @@ def test_multimodal_cluster_review_binds_manifest_environment(
     deterministic = analyze_failures(root)
     artifact_index, aliases = _agent_artifact_context(store)
     monkeypatch.setattr(
-        "rpent.evolution.lifecycle.CodexStageAgent", _FakeVisualClusterAgent
+        "zetta.evolution.lifecycle.CodexStageAgent", _FakeVisualClusterAgent
     )
 
     report = _materialize_multimodal_cluster_review(
@@ -369,7 +369,7 @@ def test_generation_with_no_failures_completes_without_agent_call(
     )
     analyze_failures(root)
     monkeypatch.setattr(
-        "rpent.evolution.lifecycle.CodexStageAgent",
+        "zetta.evolution.lifecycle.CodexStageAgent",
         lambda **_: pytest.fail("no-failure generation must not invoke an agent"),
     )
 
@@ -723,7 +723,7 @@ def test_shadow_override_can_resume_an_immutable_rejection(
         reason="target recall is complete; permit one bounded falsification replay",
     )
     assert authorization["authorization"]["candidate_sha256"] == candidate.sha256
-    monkeypatch.setattr("rpent.evolution.lifecycle.CodexStageAgent", _FakeAgent)
+    monkeypatch.setattr("zetta.evolution.lifecycle.CodexStageAgent", _FakeAgent)
     result = run_proposal_stage(
         campaign_root=store.root,
         tool_catalog={"tools": [{"name": CONTACT_PUSH_TOOL}]},
@@ -899,7 +899,7 @@ def test_full_post_rollout_lifecycle_is_append_only_and_completes(
         "nested.progress",
         "privileged.dishwasher.rack.position",
     )
-    monkeypatch.setattr("rpent.evolution.lifecycle.CodexStageAgent", _FakeAgent)
+    monkeypatch.setattr("zetta.evolution.lifecycle.CodexStageAgent", _FakeAgent)
     catalog = {"tools": [{"name": CONTACT_PUSH_TOOL}]}
     run_diagnosis_stage(campaign_root=root, tool_catalog=catalog)
     proposal = run_proposal_stage(campaign_root=root, tool_catalog=catalog)

@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 """Event-driven Role1 high-level authority for RoboCasa.
 
 This is a clean-room behavioral contract.  Tools may propose actions and a
@@ -34,9 +34,9 @@ from robots.robocasa.tool_catalog import (
     DEFAULT_ROBOCASA_TOOL_CATALOG,
     ToolCatalog,
 )
-from rpent.evolution.jsonio import atomic_write_json, canonical_json_bytes, read_json
-from rpent.planner.base import build_planner
-from rpent.tools.toolkit import Toolkit
+from zetta.evolution.jsonio import atomic_write_json, canonical_json_bytes, read_json
+from zetta.planner.base import build_planner
+from zetta.tools.toolkit import Toolkit
 
 ProposalDisposition = Literal["accept", "reject", "modify"]
 ActionKind = Literal[

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 """Serve the single bounded provider queue used by every planner process."""
 
 from __future__ import annotations
@@ -16,8 +16,8 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 if str(REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(REPOSITORY_ROOT))
 
-from rpent.planner.provider_pool import load_provider_pool_config  # noqa: E402
-from rpent.planner.provider_proxy import (  # noqa: E402
+from zetta.planner.provider_pool import load_provider_pool_config  # noqa: E402
+from zetta.planner.provider_proxy import (  # noqa: E402
     BROKER_API_KEY_ENV,
     BROKER_MAX_CONCURRENCY_ENV,
     BROKER_QUEUE_CAPACITY_ENV,
@@ -45,7 +45,7 @@ def main() -> int:
     )
     parser.add_argument("--port", type=int, default=4110)
     parser.add_argument(
-        "--model", default=os.environ.get("RPENT_PROVIDER_MODEL", "gpt-5.6-sol")
+        "--model", default=os.environ.get("ZETTA_PROVIDER_MODEL", "gpt-5.6-sol")
     )
     parser.add_argument("--timeout-s", type=float, default=900.0)
     parser.add_argument(
@@ -72,7 +72,7 @@ def main() -> int:
         parser.error(f"{BROKER_API_KEY_ENV} is required")
     config = load_provider_pool_config(default_model=f"openai-responses:{args.model}")
     if config is None:
-        parser.error("RPENT_API_PROVIDERS is required")
+        parser.error("ZETTA_API_PROVIDERS is required")
 
     broker = ProviderPoolProxy(
         config,

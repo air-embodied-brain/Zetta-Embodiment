@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 """Create an append-only audit report for legacy RoboCasa success labels.
 
 The RoboCasa Gym wrapper's sparse reward is computed directly from the
@@ -15,7 +15,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from rpent.evolution.jsonio import atomic_write_json, canonical_sha256, file_sha256
+from zetta.evolution.jsonio import atomic_write_json, canonical_sha256, file_sha256
 
 
 def _rows(path: Path) -> list[dict[str, Any]]:

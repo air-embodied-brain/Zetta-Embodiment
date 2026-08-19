@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 """Probe model channel availability without printing credentials or endpoints."""
 
 from __future__ import annotations
@@ -52,7 +52,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--api-file", type=Path, required=True)
     parser.add_argument(
-        "--base-url", default=os.environ.get("RPENT_CHANNEL_PROBE_BASE_URL")
+        "--base-url", default=os.environ.get("ZETTA_CHANNEL_PROBE_BASE_URL")
     )
     parser.add_argument("--model", default="gpt-5.6-sol")
     parser.add_argument("--reasoning-effort", default="high")
@@ -60,7 +60,7 @@ def main() -> int:
     parser.add_argument("--env-file", type=Path)
     args = parser.parse_args()
     if not args.base_url:
-        raise ValueError("--base-url or RPENT_CHANNEL_PROBE_BASE_URL is required")
+        raise ValueError("--base-url or ZETTA_CHANNEL_PROBE_BASE_URL is required")
 
     text = args.api_file.read_text(encoding="utf-8", errors="replace")
     keys = list(dict.fromkeys(re.findall(r"sk-[A-Za-z0-9_-]{20,}", text)))

@@ -6,7 +6,7 @@ import inspect
 import unittest
 
 from robots.libero import prompt_bundle
-from rpent.context.prompt_utils import format_prompt
+from zetta.context.prompt_utils import format_prompt
 
 
 class CleanLiberoPromptTest(unittest.TestCase):

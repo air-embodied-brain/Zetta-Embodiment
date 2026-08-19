@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 from __future__ import annotations
 
 import asyncio
@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from rpent.evolution.provider_admission import ProviderFailure
-from rpent.planner.provider_request_admission import ProviderRequestAdmission
+from zetta.evolution.provider_admission import ProviderFailure
+from zetta.planner.provider_request_admission import ProviderRequestAdmission
 
 
 def test_global_limit_bounds_different_routes(tmp_path: Path) -> None:
@@ -66,12 +66,12 @@ def test_route_failure_does_not_cool_global_fallback_capacity(
 def test_environment_starts_at_eight_and_supports_twenty(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("RPENT_PROVIDER_REQUEST_ADMISSION_ROOT", str(tmp_path))
+    monkeypatch.setenv("ZETTA_PROVIDER_REQUEST_ADMISSION_ROOT", str(tmp_path))
     admission = ProviderRequestAdmission.from_environment()
     assert admission is not None
     assert admission.initial_limit == 8
     assert admission.max_limit == 20
 
-    monkeypatch.setenv("RPENT_PROVIDER_MAX_CONCURRENCY", "21")
+    monkeypatch.setenv("ZETTA_PROVIDER_MAX_CONCURRENCY", "21")
     with pytest.raises(ValueError, match="must not exceed 20"):
         ProviderRequestAdmission.from_environment()

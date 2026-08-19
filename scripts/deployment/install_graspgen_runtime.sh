@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-ROOT=${RPENT_DEPLOY_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}
+ROOT=${ZETTA_DEPLOY_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}
 SOURCE="$ROOT/third_party/GraspGen"
 VENV="$ROOT/.venv-graspgen"
 

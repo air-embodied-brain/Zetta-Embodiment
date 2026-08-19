@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 from __future__ import annotations
 
 import gzip
@@ -13,8 +13,8 @@ from typing import Any
 import httpx
 import pytest
 
-from rpent.planner.provider_pool import ProviderPoolConfig, ProviderRouteSpec
-from rpent.planner.provider_proxy import (
+from zetta.planner.provider_pool import ProviderPoolConfig, ProviderRouteSpec
+from zetta.planner.provider_proxy import (
     ProviderPoolProxy,
     load_provider_broker_connection,
 )
@@ -283,11 +283,11 @@ def test_external_broker_connection_is_atomic():
     assert load_provider_broker_connection({}) is None
     assert load_provider_broker_connection(
         {
-            "RPENT_API_PROVIDER_BROKER_URL": "http://127.0.0.1:4110/",
-            "RPENT_API_PROVIDER_BROKER_API_KEY": "local-key",
+            "ZETTA_API_PROVIDER_BROKER_URL": "http://127.0.0.1:4110/",
+            "ZETTA_API_PROVIDER_BROKER_API_KEY": "local-key",
         }
     ) == ("http://127.0.0.1:4110", "local-key")
     with pytest.raises(ValueError, match="configured together"):
         load_provider_broker_connection(
-            {"RPENT_API_PROVIDER_BROKER_URL": "http://127.0.0.1:4110"}
+            {"ZETTA_API_PROVIDER_BROKER_URL": "http://127.0.0.1:4110"}
         )

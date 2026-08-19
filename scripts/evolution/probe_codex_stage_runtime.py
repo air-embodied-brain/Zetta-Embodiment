@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 """Probe the real Codex planner runtime without exposing provider secrets."""
 
 from __future__ import annotations
@@ -15,9 +15,9 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 if str(REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(REPOSITORY_ROOT))
 
-from rpent.evolution.jsonio import atomic_write_json  # noqa: E402
-from rpent.planner.base import build_planner  # noqa: E402
-from rpent.tools.toolkit import Toolkit  # noqa: E402
+from zetta.evolution.jsonio import atomic_write_json  # noqa: E402
+from zetta.planner.base import build_planner  # noqa: E402
+from zetta.tools.toolkit import Toolkit  # noqa: E402
 
 
 def run_probe(

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 set -euo pipefail
 
 # Build an isolated overlay for Codex/API planning dependencies.  The RoboCasa
@@ -7,11 +7,11 @@ set -euo pipefail
 # immutable overlay through evolution-runtime.env.
 script_dir=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 repository_root=$(cd "$script_dir/../.." && pwd)
-runtime_root="${RPENT_VLA_RUNTIME_ROOT:-$repository_root/.runtime/vla-rollout}"
-python_bin="${RPENT_ROBOCASA_PYTHON:-python3}"
+runtime_root="${ZETTA_VLA_RUNTIME_ROOT:-$repository_root/.runtime/vla-rollout}"
+python_bin="${ZETTA_ROBOCASA_PYTHON:-python3}"
 overlay_revision="v2"
-target="${RPENT_EVOLUTION_SITE:-${runtime_root}/evolution-site-cp310-${overlay_revision}}"
-runtime_env="${RPENT_ROLLOUT_RUNTIME_ENV:-${runtime_root}/runtime.env}"
+target="${ZETTA_EVOLUTION_SITE:-${runtime_root}/evolution-site-cp310-${overlay_revision}}"
+runtime_env="${ZETTA_ROLLOUT_RUNTIME_ENV:-${runtime_root}/runtime.env}"
 log_root="${runtime_root}/logs"
 
 source "${runtime_env}"
@@ -60,7 +60,7 @@ mv "${installing}" "${target}"
 
 env_tmp="${runtime_root}/evolution-runtime.env.tmp.$$"
 {
-  printf 'export RPENT_EVOLUTION_SITE=%q\n' "${target}"
+  printf 'export ZETTA_EVOLUTION_SITE=%q\n' "${target}"
   printf 'export PYTHONPATH=%q\n' "${target}:${PYTHONPATH:-}"
 } > "${env_tmp}"
 chmod 600 "${env_tmp}"

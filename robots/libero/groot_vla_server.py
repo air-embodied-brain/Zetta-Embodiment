@@ -1,10 +1,10 @@
-# Copyright (c) 2026 RPent Contributors
-"""RPent RPC adapter for NVIDIA GR00T N1.7 LIBERO.
+# Copyright (c) 2026 Zetta Contributors
+"""Zetta RPC adapter for NVIDIA GR00T N1.7 LIBERO.
 
-This server intentionally lives in a separate process/environment from RPent.
+This server intentionally lives in a separate process/environment from Zetta.
 Install the official Isaac-GR00T repository there and use the official
 ``nvidia/GR00T-N1.7-LIBERO`` checkpoint with embodiment ``LIBERO_PANDA``.
-The adapter translates RPent's compact two-camera/8-D-state wire protocol to
+The adapter translates Zetta's compact two-camera/8-D-state wire protocol to
 GR00T's simulation policy API and translates its split action streams back to
 LIBERO's 7-D OSC action.
 """
@@ -20,8 +20,8 @@ from typing import Any
 import numpy as np
 
 from robots.libero.runtime_devices import vla_runtime_info
-from rpent.utils.logging import get_logger
-from rpent.utils.rpc import RpcFacade
+from zetta.utils.logging import get_logger
+from zetta.utils.rpc import RpcFacade
 
 logger = get_logger("groot_vla_server")
 ACTION_KEYS = ("x", "y", "z", "roll", "pitch", "yaw", "gripper")

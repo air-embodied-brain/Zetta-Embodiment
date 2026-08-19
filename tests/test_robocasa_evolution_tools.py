@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 from __future__ import annotations
 
 import json
@@ -176,7 +176,7 @@ def test_privileged_input_requires_opt_in_and_records_only_safe_audit() -> None:
 
     secret_url = "http://127.0.0.1:9911/private"
     runtime = ToolRuntime(
-        environ={"RPENT_ROBOCASA_GRASPGEN_URL": secret_url},
+        environ={"ZETTA_ROBOCASA_GRASPGEN_URL": secret_url},
         http_transport=transport,
     )
     payload = {
@@ -206,7 +206,7 @@ def test_privileged_input_requires_opt_in_and_records_only_safe_audit() -> None:
 
 def test_flattened_live_privileged_state_is_recorded_in_audit() -> None:
     runtime = ToolRuntime(
-        environ={"RPENT_ROBOCASA_GRASPGEN_URL": "http://127.0.0.1:9911"},
+        environ={"ZETTA_ROBOCASA_GRASPGEN_URL": "http://127.0.0.1:9911"},
         http_transport=lambda *_args, **_kwargs: {"candidates": []},
     )
     result = runtime.invoke(
@@ -436,7 +436,7 @@ def test_service_failures_are_classified_without_leaking_endpoint_or_error() -> 
         raise urllib.error.URLError(f"secret upstream at {url}")
 
     runtime = ToolRuntime(
-        environ={"RPENT_ROBOCASA_GROOT_URL": endpoint},
+        environ={"ZETTA_ROBOCASA_GROOT_URL": endpoint},
         http_transport=unavailable,
     )
     with pytest.raises(ToolServiceUnavailable) as caught:
@@ -454,7 +454,7 @@ def test_service_failures_are_classified_without_leaking_endpoint_or_error() -> 
         raise urllib.error.HTTPError(url, 400, "token=secret", {}, None)
 
     runtime = ToolRuntime(
-        environ={"RPENT_ROBOCASA_GROOT_URL": endpoint},
+        environ={"ZETTA_ROBOCASA_GROOT_URL": endpoint},
         http_transport=rejected,
     )
     with pytest.raises(ToolServiceRejected) as rejected_error:
@@ -471,7 +471,7 @@ def test_service_action_contract_rejects_out_of_bounds_model_output() -> None:
         return {"action": [0.0, 1.01]}
 
     runtime = ToolRuntime(
-        environ={"RPENT_ROBOCASA_GROOT_URL": "http://127.0.0.1:9000"},
+        environ={"ZETTA_ROBOCASA_GROOT_URL": "http://127.0.0.1:9000"},
         http_transport=transport,
     )
     with pytest.raises(ToolContractError, match="out-of-bounds"):
@@ -479,7 +479,7 @@ def test_service_action_contract_rejects_out_of_bounds_model_output() -> None:
 
 
 def test_catalog_and_results_never_contain_configured_secrets_or_service_urls() -> None:
-    secret = "fixture-test-secret"
+    secret = "sk-test-extremely-secret"
     endpoint = "https://service.example.invalid/private"
 
     def transport(
@@ -496,7 +496,7 @@ def test_catalog_and_results_never_contain_configured_secrets_or_service_urls() 
 
     runtime = ToolRuntime(
         environ={
-            "RPENT_ROBOCASA_GROUNDED_SAM2_URL": endpoint,
+            "ZETTA_ROBOCASA_GROUNDED_SAM2_URL": endpoint,
             "GROUNDING_API_KEY": secret,
         },
         http_transport=transport,

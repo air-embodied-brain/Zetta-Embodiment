@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 """Run one audited LIBERO semantic pick-place primitive without an LLM call."""
 
 from __future__ import annotations
@@ -18,11 +18,11 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from robots.libero.env_client import LiberoEnvClient  # noqa: E402
 from robots.libero.tools import LiberoPrimitives  # noqa: E402
-from rpent.utils.daemon import pick_free_port  # noqa: E402
-from rpent.utils.http_rpc import HttpRpcClient  # noqa: E402
-from rpent.utils.logging import init_output_dir  # noqa: E402
-from rpent.utils.sam3_client import UnavailableSam3Client  # noqa: E402
-from rpent.utils.vla_client import VLAClient  # noqa: E402
+from zetta.utils.daemon import pick_free_port  # noqa: E402
+from zetta.utils.http_rpc import HttpRpcClient  # noqa: E402
+from zetta.utils.logging import init_output_dir  # noqa: E402
+from zetta.utils.sam3_client import UnavailableSam3Client  # noqa: E402
+from zetta.utils.vla_client import VLAClient  # noqa: E402
 
 
 def _wait_for_env_server(

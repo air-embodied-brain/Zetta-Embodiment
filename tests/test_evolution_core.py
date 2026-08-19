@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 from __future__ import annotations
 
 import os
@@ -8,25 +8,25 @@ from pathlib import Path
 
 import pytest
 
-from rpent.evolution.campaign import analyze_failures
-from rpent.evolution.clustering import cluster_failure_segments
-from rpent.evolution.critic import TemporalCritic
-from rpent.evolution.gating import (
+from zetta.evolution.campaign import analyze_failures
+from zetta.evolution.clustering import cluster_failure_segments
+from zetta.evolution.critic import TemporalCritic
+from zetta.evolution.gating import (
     evaluate_fixed_heldout_20,
     evaluate_paired_gate,
     evaluate_two_stage_heldout,
 )
-from rpent.evolution.models import (
+from zetta.evolution.models import (
     CampaignManifest,
     CriticPredicate,
     CriticRule,
     EpisodeRecord,
     FailureSegment,
 )
-from rpent.evolution.queue import RolloutJob, SharedHostQueue
-from rpent.evolution.schedule import preregister_seed_schedule
-from rpent.evolution.stages import blind_artifact_index
-from rpent.evolution.store import CampaignStore
+from zetta.evolution.queue import RolloutJob, SharedHostQueue
+from zetta.evolution.schedule import preregister_seed_schedule
+from zetta.evolution.stages import blind_artifact_index
+from zetta.evolution.store import CampaignStore
 
 SHA_A = "a" * 64
 
@@ -338,7 +338,7 @@ def test_failure_clustering_uses_complete_link_not_similarity_chaining(
             return 1.0
         return scores[frozenset((left.segment_id, right.segment_id))]
 
-    monkeypatch.setattr("rpent.evolution.clustering.segment_similarity", similarity)
+    monkeypatch.setattr("zetta.evolution.clustering.segment_similarity", similarity)
     clusters = cluster_failure_segments(segments, similarity_threshold=0.8)
     assert sorted(len(cluster.member_segment_ids) for cluster in clusters) == [1, 2]
 

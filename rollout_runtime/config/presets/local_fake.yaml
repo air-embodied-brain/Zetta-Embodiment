@@ -1,0 +1,77 @@
+# 本地 fake 后端 preset（实现计划 M1 交付物 6 / M2 使用）。
+#
+# 用途：在 .venv-runtime（无 mujoco / robosuite / rlinf / scipy）上跑完整的
+# Gateway ↔ EnvWorker ↔ RolloutWorker 流程。M2 的 8 条 e2e 断言就靠这份配置。
+# 一切都在一个进程一个事件循环里：transport=inproc，两个 group 各 1 rank。
+
+env_family: fake
+env_config:
+  action_dim: 7
+  chunk_size: 4
+  episode_length: 16
+  image_height: 32
+  image_width: 32
+  state_dim: 8
+
+gateway:
+  gateway_epoch: 1
+  maintenance_interval_seconds: 0.05
+  default_lease_seconds: 60.0
+  error_retention_seconds: 30.0
+  result_ttl_seconds: 30.0
+  heartbeat_timeout_seconds: 5.0
+  # M7：心跳间隔必须明显小于超时值，否则第一次探活还没发生就被墙钟判成失联。
+  # 这份 preset 的超时是 5 s（为了让用例能快速看到 LOST），所以间隔取 1 s。
+  heartbeat_interval_seconds: 1.0
+  max_concurrency_per_rank: 8
+  metrics_namespace: rr
+
+transport:
+  kind: inproc
+  command_queue_size: 64
+  control_queue_size: 16
+  result_queue_size: 64
+  infer_request_queue_size: 64
+  infer_response_queue_size: 64
+  command_timeout_seconds: 10.0
+
+env_worker:
+  group_name: env
+  num_ranks: 1
+  # 本地 0 加速器：PackedPlacementStrategy 不可用，只能 node（见计划 §0.2）。
+  placement_strategy: node
+  max_sessions_per_rank: 32
+  default_pool_size: 1
+  seed_offset: 0
+
+rollout_worker:
+  group_name: rollout
+  num_ranks: 1
+  placement_strategy: node
+  tensor_parallel_size: 1
+  pipeline_parallel_size: 1
+  policy_id: fake
+  policy_family: fake
+  device: cpu
+  dtype: float32
+  max_concurrent_inferences: 8
+  scheduler:
+    max_batch_size: 4
+    max_wait_ms: 5.0
+    max_queue_depth: 64
+    max_inflight_per_application: 32
+    max_inflight_per_session: 2
+    fixed_batch_size: null
+
+admission:
+  require_auth: false
+  tokens: {}
+  max_sessions_per_application: 32
+  max_inflight_operations_per_application: 64
+  max_inflight_operations_per_session: 4
+  max_total_inflight_operations: 128
+
+payload:
+  inline_threshold_bytes: 262144
+  request_limit_bytes: 8388608
+  image_codec: png

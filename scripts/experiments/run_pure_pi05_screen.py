@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Recoverable pure-Pi0.5 screening over LIBERO task suites.
 
-This runner intentionally has no planner or RPent memory dependency.  Each
+This runner intentionally has no planner or Zetta memory dependency.  Each
 environment episode receives the authoritative LIBERO task language directly
 as the Pi0.5 prompt and replans every five actions, matching the public openpi
 LIBERO evaluation protocol.
@@ -25,11 +25,11 @@ import numpy as np
 
 from robots.libero.env_client import LiberoEnvClient
 from robots.libero.tools import LiberoPrimitives
-from rpent.utils.daemon import ProcessDaemon, pick_free_port
-from rpent.utils.http_rpc import HttpRpcClient
-from rpent.utils.rpc import wait_for_ready
-from rpent.utils.sam3_client import UnavailableSam3Client
-from rpent.utils.vla_client import VLAClient
+from zetta.utils.daemon import ProcessDaemon, pick_free_port
+from zetta.utils.http_rpc import HttpRpcClient
+from zetta.utils.rpc import wait_for_ready
+from zetta.utils.sam3_client import UnavailableSam3Client
+from zetta.utils.vla_client import VLAClient
 
 
 SUITES = (

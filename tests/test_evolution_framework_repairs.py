@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 from __future__ import annotations
 
 import hashlib
@@ -9,8 +9,8 @@ import imageio.v2 as iio
 import numpy as np
 import pytest
 
-from rpent.evolution.jsonio import canonical_sha256
-from rpent.evolution.models import (
+from zetta.evolution.jsonio import canonical_sha256
+from zetta.evolution.models import (
     CampaignManifest,
     CandidateBundle,
     CausalDiagnosis,
@@ -21,8 +21,8 @@ from rpent.evolution.models import (
     RecoveryRule,
     RecoveryStep,
 )
-from rpent.evolution.shadow_replay import evaluate_shadow_replay
-from rpent.evolution.stages import (
+from zetta.evolution.shadow_replay import evaluate_shadow_replay
+from zetta.evolution.stages import (
     CodexStageAgent,
     _cluster_visual_contract,
     _diagnosis_visual_contract,
@@ -30,11 +30,11 @@ from rpent.evolution.stages import (
     _require_group_event_coverage,
     _require_group_visual_coverage,
 )
-from rpent.evolution.visual_artifacts import (
+from zetta.evolution.visual_artifacts import (
     build_episode_visual_artifacts,
     write_video_metadata,
 )
-from rpent.tools.toolkit import Toolkit
+from zetta.tools.toolkit import Toolkit
 from scripts.evolution.audit_robocasa_success_labels import audit
 
 

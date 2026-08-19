@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 """Plot paired success-rate evidence across immutable campaign generations.
 
 The script never infers a promotion from missing data.  A point is emitted for
@@ -18,7 +18,7 @@ import math
 from pathlib import Path
 from typing import Any
 
-from rpent.evolution.store import CampaignStore
+from zetta.evolution.store import CampaignStore
 
 
 def _wilson(successes: int, count: int, z: float = 1.959963984540054) -> tuple[float, float]:

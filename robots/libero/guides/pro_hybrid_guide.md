@@ -41,7 +41,7 @@ recover in place or write an honest failure audit and `finish`.
 
 | | oracle mode (not in this repo) | **perception (this guide)** |
 |---|---|---|
-| how launched | oracle-state run | `rpent/cli/main.py --libero-type pro` (or `LIBERO_TYPE=pro`); perception artifacts always dumped, coords withheld |
+| how launched | oracle-state run | `zetta/cli/main.py --libero-type pro` (or `LIBERO_TYPE=pro`); perception artifacts always dumped, coords withheld |
 | `states.json` objects | full `objects:{name:[x,y,z]}` | **`object_names:[…]` only — NO coords** |
 | how you learn the task | env prompt / scrape BDDL | **`states.json[0].task_language`** (authoritative `:language`, coord-free) — never read the BDDL |
 | extra obs artifacts | agentview RGB only | **+ `images_cam/`, `depths/`, `world/` (agentview); `images_wrist/`, `depths_wrist/`, `world_wrist/` (wrist); hi-res pairs; `camera_meta.json`** — all via `back_project` |
@@ -328,7 +328,7 @@ Launch a cell with the CLI; the runner owns `env_server.py`, exposes the
 structured tools, and runs single-attempt:
 
 ```bash
-python rpent/cli/main.py --env libero --suite <suite> --task <n> --seed <k> \
+python zetta/cli/main.py --env libero --suite <suite> --task <n> --seed <k> \
     --libero-type pro --planner claude_code --model claude-opus-4-8
 
 # e.g. --suite libero_spatial_task 0 (P1) · libero_spatial_swap 0 (P2) ·
@@ -480,7 +480,7 @@ LIBERO_TYPE=pro python -c \
 # 2. Read the auto-memory: resources/libero/memory/MEMORY.md
 
 # 3. Launch a perception cell (runner owns env_server; single-attempt)
-python rpent/cli/main.py --env libero --suite libero_spatial_swap --task <N> --seed 0 \
+python zetta/cli/main.py --env libero --suite libero_spatial_swap --task <N> --seed 0 \
     --libero-type pro --planner claude_code --model claude-opus-4-8
 ```
 

@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 """Episode queue integration tests for dynamic provider admission."""
 
 from __future__ import annotations
@@ -11,9 +11,9 @@ from typing import Any, Callable
 
 import pytest
 
-import rpent.evolution.queue as queue_module
-from rpent.evolution.provider_admission import ProviderAdmission
-from rpent.evolution.queue import (
+import zetta.evolution.queue as queue_module
+from zetta.evolution.provider_admission import ProviderAdmission
+from zetta.evolution.queue import (
     RolloutJob,
     SharedHostQueue,
     run_worker,
@@ -318,7 +318,7 @@ def test_non_api_job_ignores_provider_configuration_and_renews_queue_claim(
         return {"success": True, "job": job.as_dict()}
 
     _install_executor(monkeypatch, execute)
-    monkeypatch.setenv("RPENT_PROVIDER_ROUTE_ID", "https://must-not-be-read.invalid")
+    monkeypatch.setenv("ZETTA_PROVIDER_ROUTE_ID", "https://must-not-be-read.invalid")
     assert run_worker(queue_root=queue_root, host="host-a", once=True) == 0
     assert calls == [("job-0", False)]
     assert not (tmp_path / "provider").exists()
@@ -336,8 +336,8 @@ def test_legacy_root_and_limit_environment_bridge_to_default_alias(
         return _success(job)
 
     _install_executor(monkeypatch, execute)
-    monkeypatch.setenv("RPENT_API_ADMISSION_ROOT", str(provider_root))
-    monkeypatch.setenv("RPENT_API_MAX_CONCURRENCY", "2")
+    monkeypatch.setenv("ZETTA_API_ADMISSION_ROOT", str(provider_root))
+    monkeypatch.setenv("ZETTA_API_MAX_CONCURRENCY", "2")
     assert run_worker(queue_root=queue_root, host="host-a", once=True) == 0
     route = ProviderAdmission(provider_root).snapshot("default").routes["default"]
     assert route.initial_limit == 2

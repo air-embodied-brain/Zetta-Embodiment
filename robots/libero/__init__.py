@@ -12,13 +12,13 @@ from robots.libero.prompt_bundle import (
     system_prompt,
     user_prompt,
 )
-from rpent.envs.env_spec import EnvSpec, RunConfig
-from rpent.envs.prompt_bundle import PromptBundle
-from rpent.utils.config import get_repo_root
+from zetta.envs.env_spec import EnvSpec, RunConfig
+from zetta.envs.prompt_bundle import PromptBundle
+from zetta.utils.config import get_repo_root
 
 if TYPE_CHECKING:
-    from rpent.utils.daemon import ProcessDaemon
-    from rpent.utils.rpc import RpcClient
+    from zetta.utils.daemon import ProcessDaemon
+    from zetta.utils.rpc import RpcClient
 
 
 def get_env_spec() -> EnvSpec:
@@ -78,10 +78,10 @@ def _add_cli_args(parser: argparse.ArgumentParser, use_dashboard: bool) -> None:
                         help="[protocol://]host:port of an existing env_server "
                              "(protocol=http|socket, defaults to http). "
                              "If unset, a local env_server is spawned.")
-    parser.add_argument("--vla-endpoint", default=os.environ.get("RPENT_VLA_ENDPOINT"),
+    parser.add_argument("--vla-endpoint", default=os.environ.get("ZETTA_VLA_ENDPOINT"),
                         help="[protocol://]host:port of an existing vla_server "
                              "(protocol=http|socket, defaults to http). "
-                             "Defaults to RPENT_VLA_ENDPOINT; if both are unset, "
+                             "Defaults to ZETTA_VLA_ENDPOINT; if both are unset, "
                              "a local vla_server is spawned.")
     parser.add_argument("--sam3-endpoint", default=None,
                         help="[protocol://]host:port of an existing SAM3 server "
@@ -136,7 +136,7 @@ def _parse_config(args: argparse.Namespace) -> RunConfig:
     dashboard_state = None
     if getattr(args, "dashboard", False):
         from robots.libero.tools import artifact_path
-        from rpent.dashboard.state import State
+        from zetta.dashboard.state import State
 
         dashboard_state = State(
             run_id=f"{args.suite}/{output_dir.name}",
@@ -183,13 +183,13 @@ def _init_runtime(
     ``get_toolkit``) doesn't drag them in.
     """
     from robots.libero.env_client import LiberoEnvClient
-    from rpent.utils.config import get_libero_type
-    from rpent.utils.daemon import ProcessDaemon, pick_free_port
-    from rpent.utils.http_rpc import HttpRpcClient
-    from rpent.utils.rpc import parse_endpoint, wait_for_ready
-    from rpent.utils.sam3_client import Sam3Client, UnavailableSam3Client
-    from rpent.utils.socket_rpc import SocketRpcClient
-    from rpent.utils.vla_client import VLAClient
+    from zetta.utils.config import get_libero_type
+    from zetta.utils.daemon import ProcessDaemon, pick_free_port
+    from zetta.utils.http_rpc import HttpRpcClient
+    from zetta.utils.rpc import parse_endpoint, wait_for_ready
+    from zetta.utils.sam3_client import Sam3Client, UnavailableSam3Client
+    from zetta.utils.socket_rpc import SocketRpcClient
+    from zetta.utils.vla_client import VLAClient
 
     daemons: list[ProcessDaemon] = []
     libero_type = args.libero_type or get_libero_type()

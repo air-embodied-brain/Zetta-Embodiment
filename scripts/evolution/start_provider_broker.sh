@@ -3,20 +3,20 @@
 
 set -euo pipefail
 
-HOST="${RPENT_API_PROVIDER_BROKER_HOST:-127.0.0.1}"
-PORT="${RPENT_API_PROVIDER_BROKER_PORT:-4110}"
-LOG_DIR="${RPENT_API_PROVIDER_BROKER_LOG_DIR:-/tmp/rpent-provider-broker}"
+HOST="${ZETTA_API_PROVIDER_BROKER_HOST:-127.0.0.1}"
+PORT="${ZETTA_API_PROVIDER_BROKER_PORT:-4110}"
+LOG_DIR="${ZETTA_API_PROVIDER_BROKER_LOG_DIR:-/tmp/zetta-provider-broker}"
 LOG_FILE="${LOG_DIR}/broker.log"
 PID_FILE="${LOG_DIR}/broker.pid"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
-if [[ -z "${RPENT_API_PROVIDER_BROKER_API_KEY:-}" ]]; then
-  echo "RPENT_API_PROVIDER_BROKER_API_KEY is required; source providers.env first" >&2
+if [[ -z "${ZETTA_API_PROVIDER_BROKER_API_KEY:-}" ]]; then
+  echo "ZETTA_API_PROVIDER_BROKER_API_KEY is required; source providers.env first" >&2
   exit 2
 fi
-if [[ -z "${RPENT_API_PROVIDERS:-}" ]]; then
-  echo "RPENT_API_PROVIDERS is required; source providers.env first" >&2
+if [[ -z "${ZETTA_API_PROVIDERS:-}" ]]; then
+  echo "ZETTA_API_PROVIDERS is required; source providers.env first" >&2
   exit 2
 fi
 

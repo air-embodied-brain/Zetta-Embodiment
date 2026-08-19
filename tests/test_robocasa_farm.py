@@ -1,10 +1,10 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from rpent.evolution.jsonio import atomic_write_json
+from zetta.evolution.jsonio import atomic_write_json
 from scripts.evolution.serve_robocasa_farm import (
     _bound_session_is_orphaned,
     _health_restart_due,

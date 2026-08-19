@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 """Create one immutable, secret-free LIBERO-Pro evolution campaign."""
 
 from __future__ import annotations
@@ -33,20 +33,20 @@ from robots.libero.runtime_devices import (  # noqa: E402
 )
 from robots.libero.tools import TOOLS_SPEC  # noqa: E402
 from robots.robocasa.role1_agent import ROLE1_SYSTEM_CONTRACT  # noqa: E402
-from rpent.evolution.jsonio import (  # noqa: E402
+from zetta.evolution.jsonio import (  # noqa: E402
     atomic_write_json,
     canonical_sha256,
     file_sha256,
     read_json,
 )
-from rpent.evolution.models import (  # noqa: E402
+from zetta.evolution.models import (  # noqa: E402
     CampaignManifest,
     CandidateBundle,
     SafetyLayerConfig,
 )
-from rpent.evolution.protocol import EvolutionProtocol  # noqa: E402
-from rpent.evolution.schedule import preregister_seed_schedule  # noqa: E402
-from rpent.evolution.stages import (  # noqa: E402
+from zetta.evolution.protocol import EvolutionProtocol  # noqa: E402
+from zetta.evolution.schedule import preregister_seed_schedule  # noqa: E402
+from zetta.evolution.stages import (  # noqa: E402
     CLUSTER_SYSTEM_PROMPT,
     DIAGNOSIS_SYSTEM_PROMPT,
     PROPOSAL_SYSTEM_PROMPT,
@@ -279,51 +279,69 @@ def _rollout_command(
         "{output_dir}",
         "--result-file",
         "{result_file}",
-        "--gpu",
-        str(args.environment_gpus[0]),
-        "--allowed-environment-gpus",
-        ",".join(str(gpu) for gpu in args.environment_gpus),
-        "--vla-endpoint",
-        args.vla_endpoint,
-        "--vla-gpu",
-        str(args.vla_gpu),
-        "--max-actions",
-        str(args.max_actions),
-        "--wait-steps",
-        str(args.wait_steps),
-        "--actions-per-chunk",
-        str(args.actions_per_chunk),
-        "--visual-overview-frames",
-        str(args.visual_overview_frames),
-        "--visual-event-window-radius",
-        str(args.visual_event_window_radius),
-        "--visual-event-window-stride",
-        str(args.visual_event_window_stride),
-        "--visual-maximum-event-windows",
-        str(args.visual_maximum_event_windows),
-        "--role1-planner",
-        args.role1_planner,
-        "--role1-model",
-        args.role1_model,
-        "--reasoning-effort",
-        args.reasoning_effort,
-        "--role1-max-tokens",
-        str(args.role1_max_tokens),
-        "--role1-timeout-s",
-        str(args.role1_timeout_s),
-        "--role1-heartbeat-s",
-        str(args.role1_heartbeat_s),
-        "--role1-max-turns",
-        str(args.role1_max_turns),
-        "--role1-require-visual-review"
-        if getattr(args, "role1_require_visual_review", False)
-        else "--no-role1-require-visual-review",
-        "--allow-privileged-evidence"
-        if privileged_evidence_enabled(args)
-        else "--no-allow-privileged-evidence",
-        "--max-recovery-actor-calls",
-        str(args.max_recovery_actor_calls),
     ]
+    if getattr(args, "runtime_url", None):
+        command.extend(
+            [
+                "--runtime-url",
+                args.runtime_url,
+                "--policy-id",
+                args.runtime_policy_id,
+            ]
+        )
+    else:
+        command.extend(
+            [
+                "--gpu",
+                str(args.environment_gpus[0]),
+                "--allowed-environment-gpus",
+                ",".join(str(gpu) for gpu in args.environment_gpus),
+                "--vla-endpoint",
+                args.vla_endpoint,
+                "--vla-gpu",
+                str(args.vla_gpu),
+            ]
+        )
+    command.extend(
+        [
+            "--max-actions",
+            str(args.max_actions),
+            "--wait-steps",
+            str(args.wait_steps),
+            "--actions-per-chunk",
+            str(args.actions_per_chunk),
+            "--visual-overview-frames",
+            str(args.visual_overview_frames),
+            "--visual-event-window-radius",
+            str(args.visual_event_window_radius),
+            "--visual-event-window-stride",
+            str(args.visual_event_window_stride),
+            "--visual-maximum-event-windows",
+            str(args.visual_maximum_event_windows),
+            "--role1-planner",
+            args.role1_planner,
+            "--role1-model",
+            args.role1_model,
+            "--reasoning-effort",
+            args.reasoning_effort,
+            "--role1-max-tokens",
+            str(args.role1_max_tokens),
+            "--role1-timeout-s",
+            str(args.role1_timeout_s),
+            "--role1-heartbeat-s",
+            str(args.role1_heartbeat_s),
+            "--role1-max-turns",
+            str(args.role1_max_turns),
+            "--role1-require-visual-review"
+            if getattr(args, "role1_require_visual_review", False)
+            else "--no-role1-require-visual-review",
+            "--allow-privileged-evidence"
+            if privileged_evidence_enabled(args)
+            else "--no-allow-privileged-evidence",
+            "--max-recovery-actor-calls",
+            str(args.max_recovery_actor_calls),
+        ]
+    )
     command.extend(["--expected-task-language", str(task_contract["language"])])
     return command
 
@@ -427,11 +445,24 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         raise ValueError("--diagnosis-max-artifact-reads must be in [3, 64]")
     if not 6 <= int(args.cluster_max_artifact_reads) <= 64:
         raise ValueError("--cluster-max-artifact-reads must be in [6, 64]")
-    args.environment_gpus = parse_physical_gpus(args.environment_gpus)
-    device_contract = preregister_device_contract(
-        environment_gpus=args.environment_gpus,
-        vla_gpu=args.vla_gpu,
-    )
+    if getattr(args, "runtime_url", None):
+        if args.environment_gpus is not None or args.vla_gpu is not None:
+            raise ValueError(
+                "--runtime-url is exclusive with --environment-gpus/--vla-gpu "
+                "(direct-connect-only options)"
+            )
+        device_contract = None
+    else:
+        if args.environment_gpus is None or args.vla_gpu is None:
+            raise ValueError(
+                "--environment-gpus and --vla-gpu are required unless "
+                "--runtime-url is set"
+            )
+        args.environment_gpus = parse_physical_gpus(args.environment_gpus)
+        device_contract = preregister_device_contract(
+            environment_gpus=args.environment_gpus,
+            vla_gpu=args.vla_gpu,
+        )
     output = Path(args.output_root).resolve()
     output.mkdir(parents=True, exist_ok=False)
     repository_root = Path(args.repository_root).resolve()
@@ -551,12 +582,12 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         "reuse_rollout_parent_evidence": True,
         "heldout_gate_kind": "heldout_20" if args.heldout_count == 20 else "heldout",
         # Each job owns an isolated EGL process selected by its worker's
-        # RPENT_LIBERO_GPU.  It must not also request a RoboCasa farm lease.
+        # ZETTA_LIBERO_GPU.  It must not also request a RoboCasa farm lease.
         "rollout_requires_environment_slot": False,
         "bundle_files_by_sha": bundle_files_by_sha,
         "suite": args.suite,
         "task_id": args.task_id,
-        "vla_endpoint": args.vla_endpoint,
+        "vla_endpoint": args.vla_endpoint if not getattr(args, "runtime_url", None) else None,
         "runtime_device_contract": device_contract,
         "agent_model": args.agent_model,
         "reasoning_effort": args.reasoning_effort,
@@ -714,14 +745,38 @@ def main() -> int:
         action=argparse.BooleanOptionalAction,
         default=True,
     )
+    parser.add_argument(
+        "--runtime-url",
+        default=None,
+        help=(
+            "Base URL of a shared rollout-runtime serve process "
+            "(rollout_runtime.cli serve --launch ray). When set, the "
+            "generated rollout command uses --runtime-url instead of "
+            "--vla-endpoint/--vla-gpu/--allowed-environment-gpus, and "
+            "--environment-gpus/--vla-gpu are not required."
+        ),
+    )
+    parser.add_argument(
+        "--runtime-policy-id",
+        default="pi05",
+        help="Policy id served by the runtime's RolloutWorker (--runtime-url only).",
+    )
     parser.add_argument("--vla-endpoint", default="http://127.0.0.1:18811")
     parser.add_argument(
         "--environment-gpus",
         type=parse_physical_gpus,
-        required=True,
-        help="comma-separated physical GPUs allowed for LIBERO EGL workers",
+        default=None,
+        help=(
+            "comma-separated physical GPUs allowed for LIBERO EGL workers "
+            "(direct-connect mode only)"
+        ),
     )
-    parser.add_argument("--vla-gpu", type=int, required=True)
+    parser.add_argument(
+        "--vla-gpu",
+        type=int,
+        default=None,
+        help="Physical GPU for the VLA server (direct-connect mode only).",
+    )
     parser.add_argument(
         "--max-actions",
         type=int,

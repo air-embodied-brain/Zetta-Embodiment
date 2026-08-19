@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 from __future__ import annotations
 
 import sys
@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from robots.robocasa.groot_server import (
+from robots.robocasa.groot_core import (
     Gr00tRuntime,
     _observation_arrays,
     checkpoint_digest,

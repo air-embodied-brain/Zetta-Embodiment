@@ -12,7 +12,7 @@ from liberopro.liberopro.benchmark import get_benchmark
 from scripts.experiments.run_paired_episode import _sha256_file, _sha256_tree
 
 
-# Targeted cells from RPENT_ORIGINAL_L10_STRICT_SEED_MATRIX_20260801.md.
+# Targeted cells from ZETTA_ORIGINAL_L10_STRICT_SEED_MATRIX_20260801.md.
 # This intentionally over-samples historically hard cells and includes two
 # high-success anchors; it is an engineering validation, not a replacement for
 # the paper's complete 200-episode matrix.
@@ -143,7 +143,7 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
     )
     return {
         "schema_version": 1,
-        "protocol_id": "rpent-l10-targeted-paired-20260801-v2",
+        "protocol_id": "zetta-l10-targeted-paired-20260801-v2",
         "ledger_path": str(args.ledger.resolve()),
         "budget_cap": 100,
         # Preserve the virtualenv symlink; resolving it drops venv site-packages.
@@ -178,15 +178,15 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
 
 def main() -> int:
     base = Path(
-        os.environ.get("RPENT_DEPLOY_ROOT", Path(__file__).resolve().parents[2])
+        os.environ.get("ZETTA_DEPLOY_ROOT", Path(__file__).resolve().parents[2])
     ).resolve()
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--output-root", type=Path, default=base / "artifacts" / "paired-100")
     parser.add_argument("--ledger", type=Path, default=base / "artifacts" / "paired-100" / "episode_ledger.jsonl")
     parser.add_argument("--python", type=Path, default=base / ".venv-fast" / "bin" / "python")
-    parser.add_argument("--baseline-repo", type=Path, default=base / "rpent-baseline-run")
-    parser.add_argument("--integrated-repo", type=Path, default=base / "rpent-integrated-run")
+    parser.add_argument("--baseline-repo", type=Path, default=base / "zetta-baseline-run")
+    parser.add_argument("--integrated-repo", type=Path, default=base / "zetta-integrated-run")
     parser.add_argument("--baseline-commit", default="a679b0f99ebc8b3c60cbb0025a5bc6ec50a56309")
     parser.add_argument("--integrated-commit", default="b51cf9c5f83eb188ae0eb38613ce1273710c083d")
     parser.add_argument("--baseline-tool-sha", default="865146f876fcb6ed91bf3976bf9cabbfeef1cedd")

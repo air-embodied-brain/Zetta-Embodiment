@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 """Benchmark many persistent environment slots on one machine."""
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 if str(REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(REPOSITORY_ROOT))
 
-from rpent.evolution.capacity import (  # noqa: E402
+from zetta.evolution.capacity import (  # noqa: E402
     DEFAULT_API_CONCURRENCY,
     DEFAULT_SLOT_LADDER,
     CapacityConfig,

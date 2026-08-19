@@ -1,0 +1,83 @@
+# 本地 Ray 数据面 preset（实现计划 M3 交付物 5）。
+#
+# 与 local_fake 的唯一区别是数据面：transport=ray_channel，五条 rlinf Channel
+# （命令 / 控制 / 结果 / 推理请求 / 推理应答）都是真实的 ChannelWorker actor。
+# 用于 `rollout-runtime bench --config local_ray_fake` 与 tests/runtime/test_ray_launch.py。
+#
+# 本地 0 加速器：PackedPlacementStrategy 不可用，两个 group 都走 NodePlacementStrategy
+# （不声明 cluster.component_placement 就是这条路径，见计划 §0.2）。
+
+env_family: fake
+env_config:
+  action_dim: 7
+  chunk_size: 4
+  episode_length: 64
+  image_height: 32
+  image_width: 32
+  state_dim: 8
+
+cluster:
+  num_nodes: 1
+  component_placement: {}
+
+gateway:
+  gateway_epoch: 1
+  maintenance_interval_seconds: 0.5
+  default_lease_seconds: 300.0
+  error_retention_seconds: 30.0
+  result_ttl_seconds: 30.0
+  heartbeat_timeout_seconds: 30.0
+  # M7：ray 形态下探活要过一次真实 Channel 往返（§6.2 实测 p50 1.5 ms），2 s 一轮
+  # 对 30 s 的超时留了 15 次机会。
+  heartbeat_interval_seconds: 2.0
+  max_concurrency_per_rank: 16
+  metrics_namespace: rr
+
+transport:
+  kind: ray_channel
+  command_queue_size: 64
+  control_queue_size: 16
+  result_queue_size: 128
+  infer_request_queue_size: 64
+  infer_response_queue_size: 64
+  command_timeout_seconds: 60.0
+
+env_worker:
+  group_name: env
+  num_ranks: 2
+  placement_strategy: node
+  max_sessions_per_rank: 32
+  default_pool_size: 1
+  seed_offset: 0
+
+rollout_worker:
+  group_name: rollout
+  num_ranks: 2
+  placement_strategy: node
+  tensor_parallel_size: 1
+  pipeline_parallel_size: 1
+  policy_id: fake
+  policy_family: fake
+  device: cpu
+  dtype: float32
+  max_concurrent_inferences: 16
+  scheduler:
+    max_batch_size: 8
+    max_wait_ms: 3.0
+    max_queue_depth: 128
+    max_inflight_per_application: 128
+    max_inflight_per_session: 2
+    fixed_batch_size: null
+
+admission:
+  require_auth: false
+  tokens: {}
+  max_sessions_per_application: 128
+  max_inflight_operations_per_application: 256
+  max_inflight_operations_per_session: 4
+  max_total_inflight_operations: 512
+
+payload:
+  inline_threshold_bytes: 262144
+  request_limit_bytes: 8388608
+  image_codec: png

@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 """Stage a task-local LIBERO-Pro package overlay with external assets.
 
 Some runtime wheels contain the ``liberopro`` Python code but omit the

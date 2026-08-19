@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 """RPC server wrapping the Pi0.5 VLA."""
 from __future__ import annotations
 
@@ -6,7 +6,6 @@ import argparse
 import base64
 import io
 import os
-import sys
 import threading
 import time
 from typing import Any
@@ -16,20 +15,14 @@ import torch
 from omegaconf import OmegaConf
 
 from robots.libero.runtime_devices import vla_runtime_info
-from rpent.utils.config import (
+from zetta.utils.config import (
     get_pi05_checkpoint_path,
-    get_repo_root,
-    get_rlinf_repo_path,
 )
-from rpent.utils.logging import get_logger
-from rpent.utils.rpc import RpcFacade
+from zetta.utils.logging import get_logger
+from zetta.utils.rpc import RpcFacade
 
 logger = get_logger("vla_server")
 
-RPENT_ROOT = get_repo_root()
-RLINF_REPO_PATH = get_rlinf_repo_path() or (RPENT_ROOT.parent / "rlinf").resolve()
-if str(RLINF_REPO_PATH) not in sys.path:
-    sys.path.insert(0, str(RLINF_REPO_PATH))
 os.environ.setdefault("ROBOT_PLATFORM", "LIBERO")
 
 # ---------------------------------------------------------------------------
@@ -114,12 +107,12 @@ def _build_env_obs(instruction: str, images: dict[str, Any],
 
 
 # ---------------------------------------------------------------------------
-# Facade implementing the rpent.utils.vla_client protocol
+# Facade implementing the zetta.utils.vla_client protocol
 # ---------------------------------------------------------------------------
 
 
 class VLAFacade(RpcFacade):
-    """Implements :class:`rpent.utils.vla_client.VLAClient` over a Pi0.5 model.
+    """Implements :class:`zetta.utils.vla_client.VLAClient` over a Pi0.5 model.
 
     Loads the model once at construction; each ``predict`` call runs one
     single-env inference and returns a JSON-safe dict.
@@ -127,7 +120,7 @@ class VLAFacade(RpcFacade):
 
     def __init__(self, model_path: str):
         super().__init__()
-        from rlinf.models.embodiment.openpi import get_model as get_openpi_model
+        from zetta.policies.openpi import get_model as get_openpi_model
 
         cfg = build_model_cfg(model_path=model_path)
         t0 = time.time()

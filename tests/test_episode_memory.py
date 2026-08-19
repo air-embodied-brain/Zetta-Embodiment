@@ -7,13 +7,13 @@ from pathlib import Path
 from scripts.experiments.run_memory_loop import _append_ledger
 from unittest import mock
 
-from rpent.memory.task_memory import (
+from zetta.memory.task_memory import (
     TaskMemoryStore,
     canonical_sha256,
     render_episode_memory,
     validate_parameter_block,
 )
-from rpent.tools import common
+from zetta.tools import common
 from scripts.experiments.run_memory_loop import (
     MAX_ALLOWED_EPISODES,
     _decode_json_submission,
@@ -63,7 +63,7 @@ class EpisodeMemoryTests(unittest.TestCase):
             ),
             {
                 "CODEX_BASE_URL": "http://127.0.0.1:4101",
-                "CODEX_API_KEY": "rpent-local-adapter",
+                "CODEX_API_KEY": "zetta-local-adapter",
             },
         )
 
@@ -163,7 +163,7 @@ class EpisodeMemoryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "coordinate key"):
             validate_parameter_block(parameters)
         parameters = _valid_parameters()
-        parameters["open_questions"] = ["inspect C:/rpent-fixture/episode.png"]
+        parameters["open_questions"] = ["inspect C:/zetta-fixture/episode.png"]
         with self.assertRaisesRegex(ValueError, "absolute artifact path"):
             validate_parameter_block(parameters)
 
@@ -186,7 +186,7 @@ class EpisodeMemoryTests(unittest.TestCase):
             output = root / "episode"
             output.mkdir()
             with (
-                mock.patch.dict(os.environ, {"RPENT_EPISODE_MEMORY_FROZEN": "1"}),
+                mock.patch.dict(os.environ, {"ZETTA_EPISODE_MEMORY_FROZEN": "1"}),
                 mock.patch.object(common, "get_output_dir", return_value=output),
             ):
                 allowed = common.write_text_file(str(output / "audit.json"), "ok")

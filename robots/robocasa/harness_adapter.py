@@ -1,9 +1,9 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 """Fail-closed adapter for an external RoboCasa harness tool registry.
 
-The harness remains a separately versioned runtime.  RPent imports it only
+The harness remains a separately versioned runtime.  Zetta imports it only
 when an explicit root is supplied, verifies that the imported modules came
-from that root, and exposes only tools already present in RPent's audited
+from that root, and exposes only tools already present in Zetta's audited
 RoboCasa catalog.  The adapter never owns or steps the simulator.
 """
 
@@ -24,7 +24,7 @@ from robots.robocasa.tool_runtime import (
     ToolPolicyError,
     ToolRuntime,
 )
-from rpent.evolution.jsonio import canonical_sha256
+from zetta.evolution.jsonio import canonical_sha256
 
 
 class HarnessRuntimeUnavailable(RuntimeError):
@@ -53,7 +53,7 @@ def _module_belongs_to(module: Any, root: Path) -> bool:
 
 
 class HarnessToolRuntimeAdapter:
-    """Translate RPent invocation policy into the harness registry policy."""
+    """Translate Zetta invocation policy into the harness registry policy."""
 
     def __init__(
         self,
@@ -75,11 +75,11 @@ class HarnessToolRuntimeAdapter:
 
     @classmethod
     def from_root(cls, root: str | Path | None = None) -> "HarnessToolRuntimeAdapter":
-        configured = root or os.environ.get("RPENT_ROBOCASA_HARNESS_ROOT")
+        configured = root or os.environ.get("ZETTA_ROBOCASA_HARNESS_ROOT")
         if not configured:
             raise HarnessRuntimeUnavailable(
                 "harness backend requires --harness-root or "
-                "RPENT_ROBOCASA_HARNESS_ROOT"
+                "ZETTA_ROBOCASA_HARNESS_ROOT"
             )
         resolved = Path(configured).expanduser().resolve()
         scripts = resolved / "skills" / "evolving-skill-library" / "scripts"
@@ -138,7 +138,7 @@ class HarnessToolRuntimeAdapter:
         missing = sorted(required - self._names)
         if missing and self.fallback_runtime is None:
             raise HarnessRuntimeUnavailable(
-                f"harness registry is missing required RPent tools: {missing}"
+                f"harness registry is missing required Zetta tools: {missing}"
             )
         unknown = sorted(
             name
@@ -181,7 +181,7 @@ class HarnessToolRuntimeAdapter:
             audited_spec = DEFAULT_ROBOCASA_TOOL_CATALOG.get(name)
         except KeyError as exc:
             raise ToolContractError(
-                "harness tool is not present in the audited RPent catalog"
+                "harness tool is not present in the audited Zetta catalog"
             ) from exc
         if name not in self._names:
             if self.fallback_runtime is None:

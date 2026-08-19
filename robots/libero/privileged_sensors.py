@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 """Privileged LIBERO contact sensing with a real-robot analogue.
 
 The simulator implementation reads MuJoCo contact pairs and, when available,
@@ -1212,10 +1212,10 @@ def _bound_semantic_joint_plan(self: Any, **kwargs: Any) -> dict[str, Any]:
 def _bound_collect_critic_state(
     self: Any, *, reset_tracker: bool = False
 ) -> dict[str, Any]:
-    if reset_tracker or not hasattr(self, "_rpent_critic_history"):
-        self._rpent_critic_history = {}
+    if reset_tracker or not hasattr(self, "_zetta_critic_history"):
+        self._zetta_critic_history = {}
     state = collect_privileged_critic_state(self)
-    return _enrich_critic_history(state, self._rpent_critic_history)
+    return _enrich_critic_history(state, self._zetta_critic_history)
 
 
 def wrap_libero_env_factories(
@@ -1252,13 +1252,13 @@ def wrap_libero_env_factories(
                 if exc.name != "robosuite":
                     raise
             env = factory()
-            env.rpent_privileged_contacts = types.MethodType(
+            env.zetta_privileged_contacts = types.MethodType(
                 _bound_collect_contacts, env
             )
-            env.rpent_privileged_semantic_joint_plan = types.MethodType(
+            env.zetta_privileged_semantic_joint_plan = types.MethodType(
                 _bound_semantic_joint_plan, env
             )
-            env.rpent_privileged_critic_state = types.MethodType(
+            env.zetta_privileged_critic_state = types.MethodType(
                 _bound_collect_critic_state, env
             )
             return env
@@ -1269,7 +1269,7 @@ def wrap_libero_env_factories(
 
 def install_libero_contact_extension(libero_env_class: type) -> None:
     """Patch one RLinF ``LiberoEnv`` class before it creates subprocesses."""
-    if getattr(libero_env_class, "_rpent_contact_extension", False):
+    if getattr(libero_env_class, "_zetta_contact_extension", False):
         return
     original = libero_env_class.get_env_fns
 
@@ -1277,4 +1277,4 @@ def install_libero_contact_extension(libero_env_class: type) -> None:
         return wrap_libero_env_factories(original(self))
 
     libero_env_class.get_env_fns = get_env_fns_with_contact
-    libero_env_class._rpent_contact_extension = True
+    libero_env_class._zetta_contact_extension = True

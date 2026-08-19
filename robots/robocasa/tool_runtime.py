@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 """Proposal-only runtime for the RoboCasa tool surface.
 
 The runtime deliberately has no simulator client and no ``step`` operation.

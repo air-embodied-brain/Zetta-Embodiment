@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 from __future__ import annotations
 
 from pathlib import Path
@@ -400,14 +400,14 @@ def test_privileged_state_tracks_target_progress_retention_and_release() -> None
     raw = _task_env()
     wrapped = wrap_libero_env_factories([lambda: SimpleNamespace(env=raw)])[0]()
 
-    initial = wrapped.rpent_privileged_critic_state(reset_tracker=True)
+    initial = wrapped.zetta_privileged_critic_state(reset_tracker=True)
     assert initial["privileged.task.manipulated_object.ever_grasped"] is True
     assert initial[
         "privileged.task.manipulated_object.target_progress_available"
     ] is False
 
     raw.sim.data.body_xpos[2, 0] = 0.1
-    progressed = wrapped.rpent_privileged_critic_state()
+    progressed = wrapped.zetta_privileged_critic_state()
     assert progressed[
         "privileged.task.manipulated_object.target_progress_m"
     ] == pytest.approx(0.1)
@@ -415,7 +415,7 @@ def test_privileged_state_tracks_target_progress_retention_and_release() -> None
 
     raw.sim.data.ncon = 0
     raw.sim.data.contact = []
-    released = wrapped.rpent_privileged_critic_state()
+    released = wrapped.zetta_privileged_critic_state()
     assert released["privileged.task.manipulated_object.released_now"] is True
     assert released["privileged.task.manipulated_object.ever_released"] is True
     assert released["privileged.task.manipulated_object.retained"] is False
@@ -451,7 +451,7 @@ def test_factory_rebinds_asset_override_inside_spawned_worker(
             str(tmp_path.resolve() / "scenes/example.xml"),
         )
     ]
-    assert callable(wrapped.rpent_privileged_contacts)
+    assert callable(wrapped.zetta_privileged_contacts)
 
 
 def test_feature_extractor_merges_sidecar_without_mutating_actor_observation() -> None:
@@ -489,7 +489,7 @@ def test_feature_extractor_merges_sidecar_without_mutating_actor_observation() -
 
 class _Worker:
     def env_call(self, method: str, *, kwargs: dict[str, Any], target: str) -> Any:
-        assert method == "rpent_privileged_critic_state"
+        assert method == "zetta_privileged_critic_state"
         assert target == "self"
         assert kwargs == {"reset_tracker": False}
         return {

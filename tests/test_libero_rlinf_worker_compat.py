@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 from __future__ import annotations
 
 import sys
@@ -9,7 +9,7 @@ from robots.libero.rlinf_worker_compat import (
     _dispatch_env_call,
     _parent_env_call,
     compat_worker,
-    install_rlinf_env_call_compat,
+    install_env_call_bridge,
 )
 
 
@@ -86,17 +86,15 @@ def test_installer_patches_legacy_worker_and_preserves_native(monkeypatch) -> No
     class LegacyWorker:
         pass
 
-    fake_venv = types.ModuleType("rlinf.envs.libero.venv")
+    fake_venv = types.ModuleType("zetta.envs.libero.vector_env")
     fake_venv.ReconfigureSubprocEnvWorker = LegacyWorker
     fake_venv._worker = object()
-    fake_libero = types.ModuleType("rlinf.envs.libero")
+    fake_libero = types.ModuleType("zetta.envs.libero")
     fake_libero.venv = fake_venv
-    monkeypatch.setitem(sys.modules, "rlinf", types.ModuleType("rlinf"))
-    monkeypatch.setitem(sys.modules, "rlinf.envs", types.ModuleType("rlinf.envs"))
-    monkeypatch.setitem(sys.modules, "rlinf.envs.libero", fake_libero)
-    monkeypatch.setitem(sys.modules, "rlinf.envs.libero.venv", fake_venv)
+    monkeypatch.setitem(sys.modules, "zetta.envs.libero", fake_libero)
+    monkeypatch.setitem(sys.modules, "zetta.envs.libero.vector_env", fake_venv)
 
-    assert install_rlinf_env_call_compat() == "installed"
+    assert install_env_call_bridge() == "installed"
     assert LegacyWorker.env_call is _parent_env_call
     assert fake_venv._worker is compat_worker
-    assert install_rlinf_env_call_compat() == "native"
+    assert install_env_call_bridge() == "native"

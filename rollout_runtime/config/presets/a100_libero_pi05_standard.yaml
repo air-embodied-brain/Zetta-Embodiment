@@ -1,0 +1,126 @@
+# 8×A100 上的标准 LIBERO（非 PRO）延时测试 preset。
+#
+# 从 a100_libero_pi05_pro.yaml 复制而来，唯一改动：env_config.libero_variant: pro -> standard。
+#
+# 换用 standard 的原因：libero_10 全部 10 个任务在旧 LIBERO-Pro 环境中
+# + RLinf/LIBERO-PRO-assets（HF 资产仓库）组合下实测全部 FileNotFoundError——
+# 资产包系统性缺失 stable_hope_objects / stable_scanned_objects / turbosquid_objects
+# 三大类物体的 .xml 主定义文件（只打包了 texture + mesh），逐个 reset() 验证 10/10 失败。
+# 这不是任务选择问题，是这一版 liberopro 分发包本身的缺陷；standard libero 资产完整
+# （标准 LIBERO 资产完整，发布前已验证 reset() 可通过）。
+#
+# env_config.return_all_frames: true 的理由与 core_form 的约束说明见
+# a100_libero_pi05_pro.yaml 文件头注释（standard 变体不受 core_form=lockstep_vector
+# 限制那条约束，但保持不写、沿用 per_slot 默认值，两份 preset 除 libero_variant 外
+# 尽量保持逐字一致，方便后续对比）。
+#
+# 权重：https://huggingface.co/RLinf/RLinf-Pi05-LIBERO-SFT
+# 用 RR_PI05_MODEL_PATH 覆盖 model_path，避免把机器路径写进仓库。
+
+env_family: libero
+env_config:
+  task_suite_name: libero_10
+  task_id: 0
+  max_episode_steps: 520
+  camera_height: 256
+  camera_width: 256
+  camera_depths: true
+  num_steps_wait: 15
+  action_dim: 7
+  chunk_size: 5
+  action_model_type: openpi
+  return_all_frames: true
+  # 相对于 a100_libero_pi05_pro.yaml 的唯一改动：pro -> standard。
+  libero_variant: standard
+
+cluster:
+  num_nodes: 1
+  component_placement:
+    rollout:
+      # One rollout rank per GPU on an eight-GPU node.
+      placement: "0-7"
+
+gateway:
+  gateway_epoch: 1
+  maintenance_interval_seconds: 1.0
+  default_lease_seconds: 1800.0
+  error_retention_seconds: 300.0
+  result_ttl_seconds: 300.0
+  heartbeat_timeout_seconds: 60.0
+  max_concurrency_per_rank: 32
+  metrics_namespace: rr
+
+transport:
+  kind: ray_channel
+  command_queue_size: 256
+  control_queue_size: 32
+  result_queue_size: 512
+  infer_request_queue_size: 256
+  infer_response_queue_size: 256
+  command_timeout_seconds: 600.0
+
+env_worker:
+  group_name: env
+  num_ranks: 8
+  placement_strategy: node
+  # Leave a small per-rank session buffer for concurrent rollout requests.
+  max_sessions_per_rank: 3
+  default_pool_size: 1
+  seed_offset: 0
+
+rollout_worker:
+  group_name: rollout
+  num_ranks: 8
+  placement_strategy: packed
+  tensor_parallel_size: 1
+  pipeline_parallel_size: 1
+  policy_id: pi05
+  policy_family: openpi
+  policy_backend: zetta_openpi
+  device: cuda
+  dtype: bfloat16
+  max_concurrent_inferences: 32
+  policy_config:
+    model_type: openpi
+    model_path: /path/to/checkpoints/RLinf-Pi05-LIBERO-SFT
+    precision: null
+    num_action_chunks: 5
+    action_dim: 7
+    num_steps: 5
+    use_proprio: true
+    add_value_head: false
+    default_mode: eval
+    model_version: pi05-libero-sft
+    enable_cuda_graph: false
+    cuda_graph_batch_size: null
+    enable_torch_compile: false
+    family_params:
+      config_name: pi05_libero
+      num_images_in_input: 2
+      noise_level: 0.5
+      train_expert_only: true
+      noise_method: flow_sde
+      value_after_vlm: false
+      value_vlm_mode: mean_token
+      detach_critic_input: null
+      use_dsrl: false
+  scheduler:
+    max_batch_size: 8
+    max_wait_ms: 20.0
+    max_queue_depth: 256
+    max_inflight_per_application: 128
+    max_inflight_per_session: 1
+    fixed_batch_size: null
+
+admission:
+  require_auth: false
+  tokens: {}
+  max_sessions_per_application: 64
+  max_inflight_operations_per_application: 256
+  max_inflight_operations_per_session: 2
+  max_total_inflight_operations: 512
+
+payload:
+  inline_threshold_bytes: 262144
+  request_limit_bytes: 8388608
+  image_codec: png

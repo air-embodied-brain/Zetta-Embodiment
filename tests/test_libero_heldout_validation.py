@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 from __future__ import annotations
 
 from pathlib import Path
@@ -6,8 +6,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from rpent.evolution.jsonio import atomic_write_json, read_json
-from rpent.evolution.models import (
+from zetta.evolution.jsonio import atomic_write_json, read_json
+from zetta.evolution.models import (
     CampaignManifest,
     CampaignPhase,
     CandidateBundle,
@@ -15,7 +15,7 @@ from rpent.evolution.models import (
     RecoveryRule,
     RecoveryStep,
 )
-from rpent.evolution.store import CampaignStore
+from zetta.evolution.store import CampaignStore
 from scripts.evolution.prepare_libero_heldout_validation import (
     EVALUATION_SCOPE,
     prepare,

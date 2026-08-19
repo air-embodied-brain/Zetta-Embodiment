@@ -6,7 +6,7 @@ from robots.libero import _add_cli_args
 
 
 def test_vla_endpoint_defaults_to_runtime_environment(monkeypatch):
-    monkeypatch.setenv("RPENT_VLA_ENDPOINT", "http://127.0.0.1:18091")
+    monkeypatch.setenv("ZETTA_VLA_ENDPOINT", "http://127.0.0.1:18091")
     parser = argparse.ArgumentParser()
     _add_cli_args(parser, use_dashboard=True)
 
@@ -16,7 +16,7 @@ def test_vla_endpoint_defaults_to_runtime_environment(monkeypatch):
 
 
 def test_explicit_vla_endpoint_overrides_runtime_environment(monkeypatch):
-    monkeypatch.setenv("RPENT_VLA_ENDPOINT", "http://127.0.0.1:18091")
+    monkeypatch.setenv("ZETTA_VLA_ENDPOINT", "http://127.0.0.1:18091")
     parser = argparse.ArgumentParser()
     _add_cli_args(parser, use_dashboard=True)
 

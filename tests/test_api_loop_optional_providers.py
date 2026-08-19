@@ -7,7 +7,7 @@ import pytest
 pydantic_ai = pytest.importorskip("pydantic_ai")
 ModelSettings = pydantic_ai.ModelSettings
 
-from rpent.planner.api_loop import _build_model_settings
+from zetta.planner.api_loop import _build_model_settings
 
 
 class _OpenAIOnlyModel:

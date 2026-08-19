@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 """Episode-level Role1 approval for frozen LIBERO recovery steps."""
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ from robots.robocasa.role1_agent import (
     Role1ModelAdapter,
     ToolProposal,
 )
-from rpent.evolution.jsonio import atomic_write_json, canonical_sha256
+from zetta.evolution.jsonio import atomic_write_json, canonical_sha256
 
 
 class LiberoRecoveryActorError(RuntimeError):

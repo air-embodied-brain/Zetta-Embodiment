@@ -4,21 +4,18 @@
   <img src="teaser.png" alt="Zetta Overview" width="800"/>
 </div>
 
-Zetta is A Efficient Closed-Loop Embodied Harness for Self-Evolving Physical Intelligence. It evolves code-based runtime critics and recovery skills online while keeping the base policy frozen. Through three timescale-separated loops, Zetta provides action-frequency governance, rollout-level critic-recovery proposal, and validation-gated skill updates. Together with Z-Infra, a rollout infrastructure decoupling agent logic from heterogeneous execution resources, Zetta achieves state-of-the-art success on LIBERO-Pro and RoboCasa under our current rollout budget, reaching 90.8% and 93.6%, with a 11.1x inference speedup; success continues to scale with self-exploration experience; learned skills transfer zero-shot, and clear robotic ``Aha Moments'' emerge. These results show that closed-loop harness self-evolution opens a scaling path for reliable physical intelligence.
-
+Zetta is an efficient closed-loop embodied harness for self-evolving physical intelligence. It evolves code-based runtime critics and recovery skills online while keeping the base policy frozen, achieving state-of-the-art success on LIBERO-Pro (90.8%) and RoboCasa (93.6%) with an 11.1x inference speedup.
 
 ## TODO
 
 - [√] **August 18, 2026:** Open-source Zetta with LIBERO and Robocasa.
-- [ ] **August 19, 2026:** Open-source Z-Infra with LIBERO support.
-- [ ] **August 20, 2026:** Add RoboCasa support.
+- [√] **August 19, 2026:** Open-source Z-Infra with LIBERO support.
+- [√] **August 20, 2026:** Add RoboCasa support.
 - [ ] **August 27, 2026:** Add NVIDIA Cosmos model support.
 - [ ] **September 3, 2026:** Add RoboTwin environment support.
 - [ ] **September 10, 2026:** Add ManiSkill environment support.
 - [ ] **September 17, 2026:** Add BEHAVIOR environment support.
 - [ ] **Ongoing:** Expand model and environment coverage at an approximate cadence of one integration per week.
-
-
 
 ## Evolution Protocol
 
@@ -33,8 +30,7 @@ Zetta is A Efficient Closed-Loop Embodied Harness for Self-Evolving Physical Int
   -> Reject and return to Stage 2, or Promote and complete
 ```
 
-
-The runtime role boundaries are:
+Runtime role boundaries:
 
 - **Cluster** groups complete failed trajectories using synchronized video, bounded telemetry, and failure segments.
 - **Stage 1 / Diagnose** explains one observable causal failure mechanism and cannot write or execute recovery actions.
@@ -43,16 +39,15 @@ The runtime role boundaries are:
 - **Role1** accepts or rejects a Critic proposal and is the sole high-level decision authority during candidate execution.
 - **Recovery actor** executes only an accepted, bounded recovery program; only the environment actor may write simulator actions.
 
-
 ## Repository Layout
 
 | Path | Purpose |
 |---|---|
-| `rpent/evolution/` | Immutable manifests, queues, clustering, stages, gates, promotion, and supervision |
-| `robots/libero/` | LIBERO environment, VLA client/server, privileged diagnostic telemetry, and recovery runtime |
-| `robots/robocasa/` | Role1, Critic, recovery, tools, and rendering contract |
-| `scripts/evolution/` | Campaign preparation, workers, capacity probes, plots, and deployment helpers |
-| `deployment/systemd/` | Service templates; adjust the generic installation root for each host at installation time |
+| `zetta/evolution/` | Immutable manifests, queues, clustering, stages, gates, promotion, and supervision |
+| `rollout_runtime/` | The Rollout Runtime: Gateway, EnvWorker/RolloutWorker groups, and backends for LIBERO/RoboCasa/ManiSkill |
+| `robots/libero/`, `robots/robocasa/` | Env clients, Role1/Critic/Recovery, tools, and rendering contracts |
+| `scripts/evolution/` | Campaign preparation, workers, capacity probes, and plots |
+| `scripts/deployment/` | Service start/stop, VLA env install, and Docker build helpers |
 | `tests/` | Unit/contract tests; the minimal set requires no simulator or model |
 
 A campaign root normally contains:
@@ -76,9 +71,7 @@ Videos, model weights, simulator assets, API credentials, and host runtime files
 
 ## Installation
 
-Python 3.10 through 3.12 is supported.
-
-The sole source of dependency versions is `pyproject.toml`. The minimal test environment is:
+Python 3.10 through 3.12 is supported. The minimal test environment (no simulator/model required):
 
 ```bash
 python -m venv .venv
@@ -87,136 +80,71 @@ python -m pip install --upgrade pip
 python -m pip install -e ".[test]"
 ```
 
+### VLA runtime environment (LIBERO-Pro or RoboCasa)
 
-Pi0.5/SAM3 weights and optional GraspGen, Contact-GraspNet, GR00T, and FastWAM services are deployed separately. Do not commit provider configuration, API keys, model paths, or machine-specific absolute paths.
+`scripts/deployment/install_vla_env.sh` builds a venv for one of two tracks; the tracks cannot share a venv state (incompatible `robosuite` versions). See `scripts/deployment/VLA_ENV_SETUP.md` for the full bug log.
 
-RoboCasa commonly uses three Python environments because the RPent control plane, simulator, and GR00T have different dependency constraints. Use the project environment as `EXPERIMENT_PYTHON`, install RoboCasa, robosuite, and MuJoCo in `ROBOCASA_PYTHON`, and install Isaac-GR00T plus its pinned dependencies in `GROOT_PYTHON`. All environments must be able to import the current repository (either an editable install or `PYTHONPATH` is sufficient). The RoboCasa/robosuite revisions must expose the isolated `mujoco.Renderer` path checked by `robots.robocasa.env_server.isolated_renderer_status()`.
-
-## One-command Experiment Setup
-
-The supported deployment entry point is `scripts/deployment/prepare_experiment.sh`. One invocation validates dependencies, assets, checkpoints, and the isolated renderer; starts the provider broker and Pi0.5 VLA for LIBERO, or the provider broker, GR00T, and the complete environment farm for RoboCasa; then freezes the campaign, starts the shared-queue worker, and generates run/stop scripts.
-
-Copy the matching experiment template and provider template outside the repository, then fill in paths, GPU IDs, experiment parameters, and credentials. Both are trusted shell inputs and must have mode 0600. First prepare the shared private provider configuration for both experiment families:
+**LIBERO-Pro + Pi0.5**
 
 ```bash
-PROVIDERS=/secure/path/providers.env
-cp deployment/experiments/providers.env.example "$PROVIDERS"
-chmod 600 "$PROVIDERS"
-# Edit this file and set the provider URL, model, credentials, and concurrency.
+REPO_ROOT=/abs/path/to/Zetta-Embodiment \
+VENV_ROOT=/abs/path/to/venvs/vla-env \
+  bash scripts/deployment/install_vla_env.sh --track libero-pro
 ```
 
-### LIBERO Quick Start
+`install_vla_env.sh` downloads the LIBERO-Pro scene/object assets automatically. To fetch or refresh them manually:
 
 ```bash
-CONFIG=/secure/path/libero.env
-cp deployment/experiments/libero.env.example "$CONFIG"
-chmod 600 "$CONFIG"
-# Edit this file, including PROVIDER_ENV_FILE=/secure/path/providers.env.
-
-# Validate prerequisites only; do not create a campaign or start services.
-bash scripts/deployment/prepare_experiment.sh \
-  --config "$CONFIG" --validate-only
-
-# Validate, start all services and the worker, then run the campaign.
-bash scripts/deployment/prepare_experiment.sh --config "$CONFIG" --run
+"$VENV_ROOT/bin/liberopro-download-assets" --skip-existing
 ```
 
-### RoboCasa Quick Start
-
-RoboCasa uses the same entry point, but has its own explicit configuration. Fill in these groups in `robocasa.env` before validation:
-
-| Configuration | Required values |
-|---|---|
-| Storage and repository | `EXPERIMENT_ROOT`, node-local `EXPERIMENT_RUNTIME_ROOT`, shared `EXPERIMENT_QUEUE_ROOT`, `EXPERIMENT_REPO_ROOT` |
-| Python environments | `EXPERIMENT_PYTHON`, `ROBOCASA_PYTHON`, `GROOT_PYTHON` |
-| Simulator | `ROBOCASA_TASK`, `ROBOCASA_SPLIT`, `ROBOCASA_GPUS`, slot count, and base port |
-| GR00T | `GROOT_SOURCE`, `GROOT_CHECKPOINT`, `GROOT_CHECKPOINT_SHA256`, GPU, and port |
-| Experiment | rollout count, maximum action count, action chunk, generation count, and worker concurrency |
-| Provider | Absolute `PROVIDER_ENV_FILE` path, for example `/secure/path/providers.env` |
-
-Copy and edit the template, then calculate the digest of the exact checkpoint GR00T will load:
+**RoboCasa + GR00T** (needs a source checkout with `robocasa/`, `robosuite/`, `Isaac-GR00T/`)
 
 ```bash
-CONFIG=/secure/path/robocasa.env
-cp deployment/experiments/robocasa.env.example "$CONFIG"
-chmod 600 "$CONFIG"
-# Edit all placeholders, including PROVIDER_ENV_FILE=/secure/path/providers.env.
-
-set -a; source "$CONFIG"; set +a
-PYTHONPATH="$EXPERIMENT_REPO_ROOT" "$GROOT_PYTHON" -c \
-  'import sys; from robots.robocasa.groot_server import checkpoint_digest; print(checkpoint_digest(sys.argv[1]))' \
-  "$GROOT_CHECKPOINT"
-# Write the output to GROOT_CHECKPOINT_SHA256 in "$CONFIG".
-
-bash scripts/deployment/prepare_experiment.sh \
-  --config "$CONFIG" --validate-only
-bash scripts/deployment/prepare_experiment.sh --config "$CONFIG" --run
+REPO_ROOT=/abs/path/to/Zetta-Embodiment \
+VENV_ROOT=/abs/path/to/venvs/vla-env \
+ROBOCASA_SRC_ROOT=/abs/path/to/robocasa-source-checkout \
+  bash scripts/deployment/install_vla_env.sh --track robocasa
 ```
 
-For RoboCasa, this command starts and probes the provider broker, starts GR00T and the complete environment farm, resets the configured real task, checks two deterministic GR00T inferences, freezes the campaign, starts the worker, and finally runs the campaign. Any failed check terminates before campaign creation.
-
-Without `--run`, it only prepares the services and worker without starting the campaign; the command prints the generated `run_experiment.sh` path. Status and stop operations use the same experiment configuration:
+RoboCasa also needs its kitchen assets (~10GB); see the [RoboCasa installation guide](https://robocasa.ai/docs/build/html/introduction/installation.html) for details:
 
 ```bash
-bash scripts/deployment/prepare_experiment.sh --config "$CONFIG" --status
-bash scripts/deployment/prepare_experiment.sh --config "$CONFIG" --stop
+python -m robocasa.scripts.setup_macros              # set up system variables
+python -m robocasa.scripts.download_kitchen_assets   # downloads ~10GB of kitchen assets
 ```
 
-`ROLLOUT_COUNT=50`, `HELDOUT_COUNT=20`, the official horizons, and `CAMPAIGN_MAX_STEPS=0` are the formal-run defaults. A quick infrastructure check may use one development episode, one held-out episode, one logical slot, and a positive `CAMPAIGN_MAX_STEPS`; this short test validates the execution chain but is not a benchmark result.
+Prebuilt Docker images, built from `scripts/deployment/Dockerfile.vla-env`, are available for both tracks so you can skip the manual venv build:
 
-Before freezing a campaign, formal preparation sends real requests to every provider route, completes one Codex turn through the loopback broker, and performs real VLA inference. LIBERO calls Pi0.5 twice; RoboCasa resets the configured real task and requires two GR00T calls over the same observation and inference seed to produce the same action hash. Passed reports live under `EXPERIMENT_RUNTIME_ROOT/preflight` and are validated and reused when the configuration is unchanged. Therefore, the first cold start may be slow and consume a small amount of provider/model resources.
-If an upstream only provides chat-completions, set `PROVIDER_PROBE_WIRE_API=native` in the private provider file; the subsequent Codex probe still verifies the broker's production Responses-compatible interface.
+- **LIBERO-Pro** image: preconfigured with the LIBERO-Pro simulator stack and Pi0.5 dependencies. [百度网盘](https://pan.baidu.com/s/1HW7AstjCLE_BTScRFOQT2g?pwd=qv7c)
+- **RoboCasa** image: preconfigured with the RoboCasa/robosuite/Isaac-GR00T stack. [百度网盘](https://pan.baidu.com/s/1Zyg2i_3tMp249PPLK6_JAw?pwd=ztcp)
 
-GR00T fails closed if the content it actually loads does not match `GROOT_CHECKPOINT_SHA256`. After changing any private configuration, provider configuration, or checkout commit, use a new `EXPERIMENT_ROOT`.
+## Runtime Rollout System
 
-## Tests
-
-First run the contract suite that requires no simulator/model:
+Campaigns drive rollouts through the Rollout Runtime rather than talking to a per-task VLA/env server directly. Start it once per host, then point campaign preparation at it:
 
 ```bash
-python -m pytest -q \
-  tests/test_evolution_protocol.py \
-  tests/test_evolution_core.py \
-  tests/test_libero_eval_horizon.py
+CUDA_VISIBLE_DEVICES=0 MUJOCO_GL=egl \
+python -m rollout_runtime.cli serve \
+  --config <preset-name-or-yaml-path> \
+  --host 127.0.0.1 \
+  --port 18730 \
+  --launch ray
 ```
 
-Run all currently available tests:
+`--launch ray` is required for real hardware runs: it puts the EnvWorker (simulator) and RolloutWorker (model inference) groups into separate processes. `--launch local` (the default) keeps them in one process and is only for local/CI smoke tests. Presets live under `rollout_runtime/config/presets/`; copy and edit one for machine-specific GPU/checkpoint paths rather than committing a new preset with real paths.
+
+## Preparing and Running a Campaign
+
+Both LIBERO and RoboCasa use the same two-step flow: `prepare_*_campaign.py` freezes a `manifest.json`/`tool-catalog.json` against a running runtime, then `run_campaign.py` drives the campaign state machine to completion.
 
 ```bash
-python -m pytest -q
-```
-
-Tests that use an optional backend require the corresponding dependencies; hardware and service smoke tests live under `scripts/deployment/` and are not part of the minimal unit suite.
-
-## Manual LIBERO Campaign (Advanced)
-
-The one-command entry point above is the normal path. The following equivalent manual Goal-S task3 example is retained for per-component debugging. It uses the authoritative task language `Open the top layer of the drawer and put the bowl inside`, a single environment GPU, the official Goal horizon (300 policy actions + 10 waits), and the held-out test interval. Before running it, the external LIBERO assets, Pi0.5 VLA server, and API provider environment must already be prepared. The provider file must export `RPENT_API_PROVIDERS`; because it contains credentials, that file is not shown here.
-
-```bash
-set -euo pipefail
-
-REPO_ROOT="$PWD"
-PYTHON="$REPO_ROOT/.venv/bin/python"
-CAMPAIGN_ROOT="$REPO_ROOT/runs/libero-goal-s-task3/g0000"
-QUEUE_ROOT="$REPO_ROOT/runs/libero-goal-s-task3/queue"
-VLA_ENDPOINT="http://127.0.0.1:18811"
-export LIBERO_TYPE=pro
-
-# The following variables are supplied by the prepared LIBERO/VLA host.
-: "${LIBERO_ASSETS_ROOT_OVERRIDE:?Set LIBERO_ASSETS_ROOT_OVERRIDE}"
-: "${RPENT_PROVIDER_ENV_FILE:?Set the external provider env file path}"
-set -a
-source "$RPENT_PROVIDER_ENV_FILE"
-set +a
-: "${RPENT_API_PROVIDERS:?The provider env file must export RPENT_API_PROVIDERS}"
-
-mkdir -p "$(dirname "$CAMPAIGN_ROOT")" "$QUEUE_ROOT"
-
-"$PYTHON" scripts/evolution/prepare_libero_campaign.py \
-  --output-root "$CAMPAIGN_ROOT" \
+# 1. Start the runtime (see above), then prepare the campaign against it.
+python scripts/evolution/prepare_libero_campaign.py \
+  --output-root runs/libero-goal-s-task3/g0000 \
   --campaign-id libero-goal-s-task3-g0000 \
-  --repository-root "$REPO_ROOT" \
-  --runtime-python "$PYTHON" \
+  --repository-root "$PWD" \
+  --runtime-python .venv/bin/python \
   --code-commit "$(git rev-parse HEAD)" \
   --suite libero_goal_swap \
   --task-id 3 \
@@ -226,46 +154,43 @@ mkdir -p "$(dirname "$CAMPAIGN_ROOT")" "$QUEUE_ROOT"
   --rollout-count 50 \
   --fixed-heldout-seeds 1-20 \
   --heldout-mode test \
-  --same-seed-pass-rate 0.5 \
-  --same-seed-max-rounds 2 \
-  --heldout-max-rounds 1 \
-  --initial-logical-slots 1 \
-  --maximum-logical-slots 1 \
-  --continuous-logical-slots 1 \
-  --maximum-total-candidate-rounds 15 \
-  --maximum-target-clusters 2 \
-  --vla-endpoint "$VLA_ENDPOINT" \
-  --vla-gpu 0 \
-  --environment-gpus 1 \
-  --role1-require-visual-review \
-  --allow-privileged-evidence
+  --runtime-url http://127.0.0.1:18730 \
+  --runtime-policy-id <policy-id>
 
-# The worker inherits RPENT_LIBERO_GPU and the provider configuration.
-export RPENT_LIBERO_GPU=1
-"$PYTHON" scripts/evolution/run_campaign.py \
-  --manifest "$CAMPAIGN_ROOT/manifest.json" \
-  --root "$CAMPAIGN_ROOT" \
-  --queue-root "$QUEUE_ROOT" \
-  --tool-catalog "$CAMPAIGN_ROOT/tool-catalog.json" \
-  --workers libero-gpu1 \
+# 2. Run it: this starts the worker, ingests episodes, and drives
+#    Cluster -> Diagnose -> Stage2 -> Shadow Replay -> Same-seed -> Held-out.
+python scripts/evolution/run_campaign.py \
+  --manifest runs/libero-goal-s-task3/g0000/manifest.json \
+  --root runs/libero-goal-s-task3/g0000 \
+  --queue-root runs/libero-goal-s-task3/queue \
+  --tool-catalog runs/libero-goal-s-task3/g0000/tool-catalog.json \
+  --workers libero-worker-0 \
   --model gpt-5.6-sol \
-  --poll-s 10 \
-  --max-generations 1 \
-  --worker-command \
-    "$PYTHON" -m rpent.evolution.cli worker \
-    --queue-root "{queue_root}" --host "{host}" --poll-s 2 --concurrency 1
+  --max-generations 1
 ```
 
-`run_campaign.py` starts the worker, ingests completed episodes, and continuously drives the recoverable state machine through Cluster, Diagnose, Stage2, Shadow Replay, Same-seed, and Held-out test in sequence. The process exits after the requested generation reaches a terminal state. To inspect the result read-only:
+`--worker-command` (optional, must be the final flag) overrides how each worker process is launched, substituting `{queue_root}`/`{host}` into a custom command template; omit it to use the default `zetta.evolution.cli worker` invocation.
+
+`--runtime-url`/`--runtime-policy-id` replace the legacy `--vla-endpoint`/`--environment-gpus` flags; RoboCasa campaigns always go through the runtime (there is no direct-connect path). `ROLLOUT_COUNT=50`, `HELDOUT_COUNT=20`, and the official horizons are the formal-run defaults; a quick infrastructure check may use 1/1/1 with a positive `CAMPAIGN_MAX_STEPS`, but that is not a benchmark result. Each preparation script's `--help` output is the authoritative option list.
+
+To inspect a campaign read-only:
 
 ```bash
-"$PYTHON" -m rpent.evolution.cli status \
-  --root "$CAMPAIGN_ROOT" --queue-root "$QUEUE_ROOT"
+python -m zetta.evolution.cli status --root runs/libero-goal-s-task3/g0000 \
+  --queue-root runs/libero-goal-s-task3/queue
 ```
 
-For Long-T/Long-S, only replace `--suite`, `--task-id`, `--task`, the task language, and the environment GPU/VLA GPU allocation; the preparation script automatically sets the official 520-action/530-step horizon. If workers are managed manually, use `rpent-evolve run`, start one worker for each declared worker identity, and repeatedly call the idempotent `rpent-evolve optimize-step`.
+## Tests
 
-Important campaign parameters include rollout count, logical environment slots, API concurrency, infrastructure retry count, visual read budget, maximum candidate rounds, same-seed pass rate, whether the regression gate is enabled, held-out mode, significance requirements, and minimum gain. The checked-out preparation script's `--help` output is the authoritative option list.
+```bash
+# Contract suite, no simulator/model required:
+python -m pytest -q tests/test_evolution_protocol.py tests/test_evolution_core.py tests/test_libero_eval_horizon.py
+
+# Everything currently available:
+python -m pytest -q
+```
+
+Optional-backend tests require the corresponding dependencies; hardware/service smoke tests live under `scripts/deployment/` and are not part of the minimal unit suite.
 
 ## Security and Reproducibility
 
@@ -276,10 +201,9 @@ Important campaign parameters include rollout count, logical environment slots, 
 - Use privileged simulator state only through an explicitly authorized and auditable diagnostic feature contract; it must not become hidden task control.
 - Treat held-out results as test-only unless `heldout_mode=validation` is preregistered before any episode runs.
 
-
 ## Acknowledgements
 
-We gratefully acknowledge RPent for its foundational contributions. Z-Infra is coming soon.
+We gratefully acknowledge Zetta for its foundational contributions. Z-Infra is coming soon.
 
 ## Citation
 

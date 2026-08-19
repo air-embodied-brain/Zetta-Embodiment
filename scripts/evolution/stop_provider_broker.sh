@@ -3,7 +3,7 @@
 
 set -euo pipefail
 
-LOG_DIR="${RPENT_API_PROVIDER_BROKER_LOG_DIR:-/tmp/rpent-provider-broker}"
+LOG_DIR="${ZETTA_API_PROVIDER_BROKER_LOG_DIR:-/tmp/zetta-provider-broker}"
 PID_FILE="${LOG_DIR}/broker.pid"
 
 if [[ ! -f "${PID_FILE}" ]]; then

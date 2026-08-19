@@ -1,0 +1,108 @@
+# RoboCasa 单机 preset，policy 后端为真实 Pi0/openpi（不是 GR00T）。
+#
+# 与 ``robocasa_current.yaml`` 的关键差别：
+#   1. rollout_worker.policy_backend: zetta_openpi（不是 groot）——真实权重来自
+#      ``RLinf-Pi0-RoboCasa``（openpi ``pi0_robocasa_human`` config），产出
+#      RoboCasa 12 维扁平动作契约（``robots.robocasa.action_contract.
+#      FLAT_ACTION_SIZE``），action_dim 因此固定为 12（不是 LIBERO 的 7）。
+#   2. env_config.require_isolated_renderer: false——本机验证用的
+#      ``robosuite@master``（upstream，``install_robocasa365_env`` 要求的版本）
+#      没有隔离渲染器补丁（见 ``robots/robocasa/stable_renderer.py``）；生产/长
+#      episode 场景不应关闭这项检查，这里只是短 episode 吞吐测试的妥协。
+#
+# 单机单卡场景：num_ranks 都是 1，component_placement 留空（走
+# NodePlacementStrategy）。通用 8 卡 ray placement 见
+# ``robocasa_pi0_8gpu.yaml``。
+#
+# 实测数字：the runtime validation notes「RoboCasa」§1。
+
+env_family: robocasa
+env_config:
+  task: SlideDishwasherRack
+  split: target
+  camera_size: 256
+  max_steps: 1000
+  require_isolated_renderer: false
+
+cluster:
+  num_nodes: 1
+  component_placement: {}
+
+gateway:
+  gateway_epoch: 1
+  maintenance_interval_seconds: 1.0
+  default_lease_seconds: 1800.0
+  error_retention_seconds: 300.0
+  result_ttl_seconds: 300.0
+  heartbeat_timeout_seconds: 60.0
+  heartbeat_interval_seconds: 10.0
+  max_concurrency_per_rank: 4
+  metrics_namespace: rr
+
+transport:
+  kind: ray_channel
+  command_queue_size: 64
+  control_queue_size: 16
+  result_queue_size: 64
+  infer_request_queue_size: 16
+  infer_response_queue_size: 16
+  command_timeout_seconds: 600.0
+
+env_worker:
+  group_name: env
+  num_ranks: 1
+  placement_strategy: packed
+  max_sessions_per_rank: 1
+  default_pool_size: 1
+  seed_offset: 0
+
+rollout_worker:
+  group_name: rollout
+  num_ranks: 1
+  placement_strategy: packed
+  tensor_parallel_size: 1
+  pipeline_parallel_size: 1
+  policy_id: openpi
+  policy_family: openpi
+  policy_backend: zetta_openpi
+  device: cuda
+  dtype: bfloat16
+  max_concurrent_inferences: 1
+  policy_config:
+    model_type: openpi
+    model_path: /path/to/checkpoints/RLinf-Pi0-RoboCasa
+    precision: null
+    num_action_chunks: 5
+    action_dim: 12
+    num_steps: 5
+    use_proprio: true
+    family_params:
+      config_name: pi0_robocasa_human
+      num_images_in_input: 2
+      noise_level: 0.5
+      train_expert_only: true
+      noise_method: flow_sde
+      value_after_vlm: false
+      value_vlm_mode: mean_token
+      detach_critic_input: null
+      use_dsrl: false
+  scheduler:
+    max_batch_size: 1
+    max_wait_ms: 0.0
+    max_queue_depth: 16
+    max_inflight_per_application: 4
+    max_inflight_per_session: 1
+    fixed_batch_size: null
+
+admission:
+  require_auth: false
+  tokens: {}
+  max_sessions_per_application: 4
+  max_inflight_operations_per_application: 8
+  max_inflight_operations_per_session: 2
+  max_total_inflight_operations: 16
+
+payload:
+  inline_threshold_bytes: 262144
+  request_limit_bytes: 8388608
+  image_codec: png

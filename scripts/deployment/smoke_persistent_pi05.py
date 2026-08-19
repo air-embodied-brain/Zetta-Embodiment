@@ -10,8 +10,8 @@ from pathlib import Path
 
 import numpy as np
 
-from rpent.utils.http_rpc import HttpRpcClient
-from rpent.utils.vla_client import VLAClient
+from zetta.utils.http_rpc import HttpRpcClient
+from zetta.utils.vla_client import VLAClient
 
 
 def main() -> None:

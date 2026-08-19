@@ -1,0 +1,470 @@
+# VLA runtime environment: LIBERO-Pro + Pi0.5, or RoboCasa + GR00T.
+#
+# Reproduces, as a build, the venv that was built by hand and validated end to
+# end for two tracks -- selected via `--build-arg TRACK`:
+#   TRACK=libero-pro   LIBERO-Pro simulation + Pi0.5 (Zetta OpenPI backend)
+#   TRACK=robocasa     RoboCasa simulation + GR00T
+#
+# See VLA_ENV_SETUP.md for the full narrative, including the real bugs found
+# and fixed along the way (each reproduced below as an explicit, commented
+# step, not silently folded in).
+#
+# The two tracks share almost all infrastructure (OS packages, Python venv,
+# mujoco==3.3.1, this repo's rollout_runtime install, and the
+# pydantic/numpydantic fix) and diverge at exactly one point that is
+# a CODE-LEVEL conflict, not a version-resolution problem:
+#   robosuite version -- LIBERO-Pro's liberopro.liberopro.envs.bddl_base_domain.
+#   BDDLBaseDomain subclasses robosuite.environments.manipulation.
+#   single_arm_env.SingleArmEnv (removed entirely in robosuite>=1.5, refactored
+#   into a differently-shaped manipulation_env.ManipulationEnv); RoboCasa's
+#   kitchen.py needs robosuite.models.robots.PandaOmron, which only exists in
+#   robosuite>=1.5.0. The two tracks cannot coexist in the same venv state --
+#   this Dockerfile produces one image per TRACK build, not one image with
+#   both installed.
+#
+# This intentionally does NOT bake in:
+#   - the Zetta-Embodiment project source (mount it; keeps image/code
+#     versions decoupled, matches deployment/docker/robocasa-pi0.Dockerfile's
+#     convention)
+#   - VLA checkpoints (tens of GB; mount them or pull from the HF Hub at
+#     runtime)
+#   - LIBERO-Pro's scene assets by default (downloaded/linked at container
+#     start via `liberopro-download-assets`) or RoboCasa's source checkout
+#     (mount a ROBOCASA_SRC_ROOT-shaped tree at build time via the
+#     robocasa-src build context, see step 4 below). An optional, currently
+#     commented-out step 4.5 can bake LIBERO-Pro's assets into the image from
+#     a `liberopro-assets` build context instead -- see that step for the
+#     exact `docker build --build-context` invocation and its tradeoffs.
+#
+# Build (from the repository root). Both tracks require Docker BuildKit
+# (`DOCKER_BUILDKIT=1` or a recent Docker Desktop / `docker buildx build`)
+# because of the named `robocasa-src` build context used in step 4 below.
+# The libero-pro track does not use that context's content, but Docker has
+# no conditional COPY, so an empty placeholder directory must still be
+# supplied:
+#
+#   mkdir -p /tmp/empty-robocasa-src   # one-time, reusable placeholder
+#   docker build -f scripts/deployment/Dockerfile.vla-env \
+#     --build-arg TRACK=libero-pro \
+#     --build-context robocasa-src=/tmp/empty-robocasa-src \
+#     -t zetta-vla-env:libero-pro .
+#
+#   docker build -f scripts/deployment/Dockerfile.vla-env \
+#     --build-arg TRACK=robocasa \
+#     --build-context robocasa-src=/abs/path/to/robocasa-source-checkout \
+#     -t zetta-vla-env:robocasa .
+#
+# The robocasa track's --build-context must point at a directory containing
+# robocasa/, robosuite/, and Isaac-GR00T/ subdirectories (each an editable
+# install source), matching ROBOCASA_SRC_ROOT in install_vla_env.sh.
+#
+# Optional: bake LIBERO-Pro's assets into the image instead of
+# mounting/linking them at container start (step 4.5 below is commented out
+# by default). To enable it, uncomment step 4.5 and add a second build
+# context pointing at LIBERO-Pro's own *raw* assets tree (a directory that
+# itself contains `scenes/`, e.g. the direct output of
+# `liberopro-download-assets` or an existing `.../liberopro/liberopro/assets`
+# directory -- not a symlink, `docker build` cannot dereference one across
+# the build context boundary, and NOT a pre-built composite tree; step 4.5
+# builds the composite tree itself from this raw input):
+#
+#   docker build -f scripts/deployment/Dockerfile.vla-env \
+#     --build-arg TRACK=libero-pro \
+#     --build-context robocasa-src=/tmp/empty-robocasa-src \
+#     --build-context liberopro-assets=/abs/path/to/liberopro/liberopro/assets \
+#     -t zetta-vla-env:libero-pro .
+#
+# Tradeoff: this adds ~1.2GB to the image (LIBERO-Pro's own assets plus a
+# copy of robosuite's models/assets, merged into a composite tree -- see
+# step 4.5's comment for why the merge is required) and removes the runtime
+# dependency on `liberopro-download-assets`/HF Hub access, at the cost of a
+# slower, less portable image build (the raw assets tree must be prepared
+# locally first) and a fixed assets snapshot baked at build time. Prefer the
+# default (unbaked) path unless the deployment target cannot mount/download
+# assets at container start.
+#
+# Run (mount the project and checkpoints; --gpus all + MUJOCO_GL=egl are
+# required for offscreen rendering). rollout_runtime and zetta are imported
+# straight from the mount -- no
+# `pip install -e .` is baked into the image (see step 5 below):
+#   docker run -d --name zetta-vla-env --gpus all --shm-size=16g \
+#     -v /abs/path/to/Zetta-Embodiment:/workspace/Zetta-Embodiment \
+#     -v /abs/path/to/checkpoints:/workspace/checkpoints:ro \
+#     -w /workspace/Zetta-Embodiment \
+#     zetta-vla-env:<track> sleep infinity
+#
+# Then, inside the container, verify Zetta imports from the mounted checkout
+# and run the track's smoke test documented there:
+#   docker exec -it -w /workspace/Zetta-Embodiment zetta-vla-env \
+#     /workspace/.venv-vla/bin/python -c "
+#       import zetta
+#       print('zetta source root OK:', zetta.__file__)"
+#
+# libero-pro real rollouts additionally require LIBERO_ASSETS_ROOT_OVERRIDE
+# to point at a composite assets tree (robosuite's own robot models merged
+# with LIBERO-Pro's scenes/objects) -- not raw LIBERO-Pro assets alone. If
+# step 4.5 was enabled at build time, the image's own
+# `.venv-vla/lib/python.../site-packages/liberopro/liberopro/assets` is
+# already this composite tree and needs no override. Otherwise (the default,
+# unbaked path), build one at container start before running any rollout:
+#   docker exec -w /workspace/Zetta-Embodiment zetta-vla-env bash -c '
+#     PY=/workspace/.venv-vla/bin/python
+#     "$PY" -m pip install "omegaconf>=2.3,<3"    # see step 5 comment below
+#     /workspace/.venv-vla/bin/liberopro-download-assets --skip-existing
+#     COMPOSITE=/workspace/libero-pro-composite-assets
+#     mkdir -p "$COMPOSITE"
+#     LIBEROPRO_ASSETS=$("$PY" -c "import os,liberopro; print(os.path.join(os.path.dirname(liberopro.__file__), \"liberopro\", \"assets\"))")
+#     ROBOSUITE_ASSETS=$("$PY" -c "import os,robosuite; print(os.path.join(os.path.dirname(robosuite.__file__), \"models\", \"assets\"))")
+#     cp -a "$ROBOSUITE_ASSETS/." "$COMPOSITE/"
+#     cp -a "$LIBEROPRO_ASSETS/." "$COMPOSITE/"'
+#   export LIBERO_ASSETS_ROOT_OVERRIDE=/workspace/libero-pro-composite-assets
+# See VLA_ENV_SETUP.md and install_vla_env.sh's "7/9" step for the full
+# construction and its root cause (bind_libero_assets_root() has no fallback
+# to robosuite's own assets when the override tree is missing
+# robots/panda/robot.xml -- reproduced end to end on a real A100 host).
+
+FROM nvidia/cuda:12.6.3-cudnn-runtime-ubuntu22.04
+
+ARG TRACK
+ARG PYTHON_VERSION=3.10
+# Pinned to the exact versions this image was validated against
+# (VLA_ENV_SETUP.md). Bump deliberately.
+ARG MUJOCO_VERSION=3.3.1
+ARG LIBEROPRO_VERSION=0.1.1
+ARG RLINF_OPENPI_VERSION=0.1.1
+ARG PYDANTIC_VERSION=2.10.6
+ARG TRANSFORMERS_VERSION=4.51.3
+ARG FLASH_ATTN_VERSION=2.8.3
+# Only used by the robocasa track; override if the build host can't reach
+# github.com directly (see the FLASH_ATTN_WHEEL_URL fallback comment below).
+ARG FLASH_ATTN_WHEEL_URL=
+
+RUN test -n "$TRACK" || (echo "ERROR: --build-arg TRACK=libero-pro|robocasa is required" >&2 && false)
+RUN test "$TRACK" = "libero-pro" -o "$TRACK" = "robocasa" || \
+    (echo "ERROR: TRACK must be 'libero-pro' or 'robocasa', got '$TRACK'" >&2 && false)
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    MUJOCO_GL=egl \
+    PYOPENGL_PLATFORM=egl \
+    NVIDIA_DRIVER_CAPABILITIES=all
+
+# ---------------------------------------------------------------------------
+# 1. OS packages, shared by both tracks. build-essential is needed for
+#    numba/native-extension builds pulled in transitively by
+#    robosuite/liberopro/robocasa; the libegl/libgl dev packages are needed
+#    for MuJoCo's EGL offscreen renderer; git is needed by source installs.
+# ---------------------------------------------------------------------------
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        python${PYTHON_VERSION} \
+        python${PYTHON_VERSION}-venv \
+        python${PYTHON_VERSION}-dev \
+        build-essential \
+        git \
+        curl \
+        ca-certificates \
+        libegl1-mesa-dev \
+        libgl1-mesa-dev \
+        libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace
+
+# ---------------------------------------------------------------------------
+# 2. Python environment, shared by both tracks.
+# ---------------------------------------------------------------------------
+RUN python${PYTHON_VERSION} -m venv /workspace/.venv-vla
+ENV VIRTUAL_ENV=/workspace/.venv-vla
+ENV PATH="/workspace/.venv-vla/bin:${PATH}"
+
+RUN pip install --upgrade pip setuptools wheel
+
+# ---------------------------------------------------------------------------
+# 3. mujoco, pinned first and shared by both tracks. Both tracks were
+#    validated against 3.3.1 (not the 3.8.1 some LIBERO-Pro production venvs
+#    use) -- LIBERO-Pro works fine either way; RoboCasa's own __init__.py
+#    hard-asserts exactly 3.3.1.
+# ---------------------------------------------------------------------------
+RUN pip install "mujoco==${MUJOCO_VERSION}"
+
+# ---------------------------------------------------------------------------
+# 4. Track-specific robosuite version + simulation package. This is the one
+#    genuine fork point (see the header comment) -- everything after this
+#    step is shared again.
+# ---------------------------------------------------------------------------
+RUN if [ "$TRACK" = "libero-pro" ]; then \
+        pip install --no-deps "liberopro==${LIBEROPRO_VERSION}" && \
+        pip install "robosuite>=1.4,<1.5" bddl cloudpickle gym h5py imageio opencv-python termcolor && \
+        python -c "\
+import robosuite; \
+assert robosuite.__version__.startswith('1.4.'), \
+    f'expected robosuite 1.4.x for liberopro, got {robosuite.__version__}'"; \
+    fi
+
+# The robocasa track needs a real source checkout (robocasa/, robosuite/,
+# Isaac-GR00T/) mounted in as an additional build context named
+# `robocasa-src` (requires BuildKit; see the docstring above for the exact
+# `docker build --build-context` invocation). Docker has no conditional COPY,
+# so this instruction always runs regardless of TRACK -- for a libero-pro
+# build, pass any empty directory as the context (see the `mkdir -p
+# /tmp/empty-robocasa-src` placeholder in the docstring above). The RUN step
+# below only acts on the copied content when TRACK=robocasa, so an empty
+# placeholder is harmless for the libero-pro build.
+COPY --from=robocasa-src . /workspace/robocasa-src-optional
+RUN if [ "$TRACK" = "robocasa" ]; then \
+        test -d /workspace/robocasa-src-optional/robocasa || \
+          (echo "ERROR: --build-context robocasa-src=<dir with robocasa/,robosuite/,Isaac-GR00T/> is required for TRACK=robocasa" >&2 && false); \
+        pip install -e /workspace/robocasa-src-optional/robosuite --no-deps && \
+        pip install -e /workspace/robocasa-src-optional/robocasa && \
+        python -c "\
+import robosuite; \
+assert robosuite.__version__.startswith('1.5.'), \
+    f'expected robosuite 1.5.x for robocasa, got {robosuite.__version__}'"; \
+    fi
+
+# ---------------------------------------------------------------------------
+# 4.5. OPTIONAL, commented out by default: bake LIBERO-Pro's assets into the
+#      image instead of mounting/linking them at container start. libero-pro
+#      only; RoboCasa has no equivalent step. Requires a second build
+#      context named `liberopro-assets` (see the docstring above for the
+#      exact `docker build --build-context` invocation and the tradeoffs of
+#      baking a fixed assets snapshot into the image).
+#
+#      The supplied `liberopro-assets` context must be LIBERO-Pro's own raw
+#      assets tree (e.g. the output of `liberopro-download-assets`; a
+#      directory containing scenes/, articulated_objects/, etc.) -- NOT a
+#      pre-built composite tree. This step builds the composite tree itself
+#      (robosuite's own models/assets as the base, LIBERO-Pro's assets
+#      merged on top) so the image ends up self-contained without requiring
+#      a separately prepared composite directory at build time.
+#
+#      Why a composite tree, not raw LIBERO-Pro assets alone: liberopro's
+#      robot classes (e.g. envs/robots/mounted_panda.py) resolve
+#      `xml_path_completion("robots/panda/robot.xml")` against whatever
+#      directory LIBERO_ASSETS_ROOT_OVERRIDE points at (via
+#      robots/libero/assets.py::bind_libero_assets_root(), which has no
+#      fallback -- it fully replaces robosuite.models.assets_root). That XML
+#      (and its meshes) lives only in robosuite's own `models/assets/`, not
+#      in the LIBERO-PRO-assets dataset (scenes/objects only). Pointing
+#      LIBERO_ASSETS_ROOT_OVERRIDE at raw LIBERO-Pro assets alone fails at
+#      environment reset with `FileNotFoundError:
+#      .../assets/robots/panda/robot.xml` -- reproduced end to end on a real
+#      A100 host running a real 300-action libero_goal_swap/task3 rollout.
+#
+#      Uncomment both the COPY and the RUN below (and nothing else) to
+#      enable. A libero-pro build without `--build-context
+#      liberopro-assets=...` will fail the COPY with a clear "context not
+#      found" error if these two lines are uncommented but the flag is
+#      omitted -- pass a real assets directory or re-comment this step.
+# ---------------------------------------------------------------------------
+# COPY --from=liberopro-assets . /workspace/liberopro-assets-raw
+# RUN if [ "$TRACK" = "libero-pro" ]; then \
+#         test -d /workspace/liberopro-assets-raw/scenes || \
+#           (echo "ERROR: --build-context liberopro-assets=<dir with a 'scenes' subdirectory, e.g. liberopro-download-assets output> is required when step 4.5 is enabled for TRACK=libero-pro" >&2 && false); \
+#         COMPOSITE=/workspace/.venv-vla/lib/python${PYTHON_VERSION}/site-packages/liberopro/liberopro/assets && \
+#         rm -rf "$COMPOSITE" && mkdir -p "$COMPOSITE" && \
+#         cp -a /workspace/.venv-vla/lib/python${PYTHON_VERSION}/site-packages/robosuite/models/assets/. "$COMPOSITE/" && \
+#         cp -a /workspace/liberopro-assets-raw/. "$COMPOSITE/" && \
+#         test -f "$COMPOSITE/robots/panda/robot.xml" || (echo "ERROR: composite assets tree is missing robosuite's robots/panda/robot.xml" >&2 && false) && \
+#         test -f "$COMPOSITE/scenes/libero_tabletop_base_style.xml" || (echo "ERROR: composite assets tree is missing LIBERO-Pro's scenes/libero_tabletop_base_style.xml" >&2 && false) && \
+#         echo "LIBERO-Pro composite assets baked into image ($(du -sh "$COMPOSITE" | cut -f1))"; \
+#     fi
+
+# ---------------------------------------------------------------------------
+# 5. rollout_runtime's own runtime dependencies, shared by both tracks. The
+#    Zetta-Embodiment project source itself is bind-mounted at container run
+#    time (see the docstring above), matching
+#    deployment/docker/robocasa-pi0.Dockerfile's convention of never baking
+#    in or editable-installing this repo -- rollout_runtime and zetta are
+#    imported straight from the mount. No main RLinf package is required.
+#
+#    ray is rollout_runtime's own direct dependency (its M3 Ray data-plane),
+#    install it explicitly since this image does not editable-install the repo.
+#
+#    omegaconf is used by runtime configuration loading. Pinned to the same
+#    range as the repository's Ray extra.
+# ---------------------------------------------------------------------------
+RUN pip install ray "omegaconf>=2.3,<3"
+
+# ---------------------------------------------------------------------------
+# 6. Track-specific VLA backend dependencies.
+# ---------------------------------------------------------------------------
+RUN if [ "$TRACK" = "libero-pro" ]; then \
+        pip install "rlinf-openpi==${RLINF_OPENPI_VERSION}"; \
+    fi
+
+# The OpenPI distribution is the sole allowed RLinf-named distribution. The
+# runtime itself must never pull in the main framework or environment forks.
+RUN python -c "\
+from importlib.metadata import distributions; \
+names={str(d.metadata.get('Name','')).lower() for d in distributions()}; \
+bad=sorted(n for n in names if n == 'rlinf' or (n.startswith('rlinf-') and n != 'rlinf-openpi')); \
+assert not bad, f'forbidden RLinf distributions installed: {bad}'"
+
+# Bug fix (see VLA_ENV_SETUP.md "Bug 1", libero-pro only): rlinf-openpi's
+# dependency chain (lerobot -> gym-aloha -> dm-control) transitively bumps
+# mujoco to 3.8.1. Nothing on the actually-exercised openpi import path
+# imports mujoco at all -- gym-aloha's mujoco pin is an unused metadata
+# constraint for a different robot platform. Re-pin back to the validated
+# version. Harmless (and skipped) for the robocasa track, which already
+# pinned this in step 3.
+RUN pip install "mujoco==${MUJOCO_VERSION}" --force-reinstall --no-deps
+
+RUN if [ "$TRACK" = "robocasa" ]; then \
+        pip install -e /workspace/robocasa-src-optional/Isaac-GR00T; \
+    fi
+
+# Bug fix (see VLA_ENV_SETUP.md "Bug 4", robocasa only): GR00T's Eagle vision
+# backbone requires flash_attn, with no CPU fallback. flash-attn has no
+# universal prebuilt wheel; the exact torch/cuda/python/cxx11-ABI combination
+# must match this venv's torch build. FLASH_ATTN_WHEEL_URL defaults to the
+# official GitHub release matching this image's pinned versions -- override
+# it (a reachable URL, an internal mirror, or a `file://` path baked in via
+# an earlier COPY) if the build host can't reach github.com directly.
+RUN if [ "$TRACK" = "robocasa" ]; then \
+        URL="${FLASH_ATTN_WHEEL_URL:-https://github.com/Dao-AILab/flash-attention/releases/download/v${FLASH_ATTN_VERSION}/flash_attn-${FLASH_ATTN_VERSION}+cu12torch2.7cxx11abiTRUE-cp310-cp310-linux_x86_64.whl}" && \
+        pip install "$URL"; \
+    fi
+
+# Bug fix (see VLA_ENV_SETUP.md "Bug 5", robocasa only): rlinf-openpi/lerobot
+# pull in `rlinf-transformer-openpi`, a repackaged distribution of the real
+# transformers library that silently overwrites transformers' files on disk
+# in site-packages (pip's own metadata still reports the original version).
+# Force-reinstall the real files without touching the version pin.
+RUN if [ "$TRACK" = "robocasa" ]; then \
+        pip install "transformers==${TRANSFORMERS_VERSION}" --force-reinstall --no-deps; \
+    fi
+
+# ---------------------------------------------------------------------------
+# 7. pydantic/numpydantic fix, shared by both tracks (see VLA_ENV_SETUP.md
+#    "Bug 3"): rlinf-openpi/lerobot resolve pydantic to 2.13.x, which breaks
+#    numpydantic's pydantic-core schema generation. Downgrade and let pip
+#    resolve a matching pydantic-core (no --no-deps).
+# ---------------------------------------------------------------------------
+RUN pip install "pydantic==${PYDANTIC_VERSION}"
+
+# ---------------------------------------------------------------------------
+# 7.5. zetta's own base runtime dependencies + ffmpeg, shared by both tracks.
+#      Reproduced from a real end-to-end verification run on an A100 host
+#      (both tracks, ``rollout_runtime.cli serve --launch ray`` +
+#      ``robots/*/run_rollout.py``):
+#
+#      - fastapi/uvicorn/httpx/msgpack are imported directly by
+#        ``rollout_runtime.serve``/``rollout_runtime.transport`` (the
+#        ``serve``/``bench`` CLI subcommands, gateway HTTP surface, and the
+#        Ray channel wire codec). Without them ``rollout_runtime.cli serve``
+#        fails immediately with ``ModuleNotFoundError: No module named
+#        'fastapi'`` -- this repo intentionally does not
+#        ``pip install -e .`` the project itself (see step 5's comment), so
+#        none of ``pyproject.toml``'s base ``dependencies`` land in the image
+#        by any other path.
+#      - mcp/pydantic-ai-slim/claude-agent-sdk/openai-codex/huggingface_hub/
+#        prompt-toolkit/imageio are the remaining base ``dependencies`` (the
+#        Role1/Codex agent layer used by ``prepare_*_campaign.py``'s
+#        generated rollout commands and ``zetta.evolution.cli``). They are
+#        not required for ``rollout_runtime.cli serve`` itself but are
+#        required to run the campaign scripts at all.
+#      - ffmpeg (the system binary, not a Python package) is required by
+#        ``zetta.evolution.trajectory``'s video encoding; without it every
+#        RoboCasa/LIBERO episode fails post-rollout with
+#        ``TrajectoryFormatError: missing or empty video artifact`` even
+#        though the rollout itself completed successfully -- reproduced end
+#        to end on a real A100 host running a real GR00T episode through
+#        ``rollout_runtime.cli serve --launch ray``.
+#
+#      Known conflict (robocasa track only, real and reproducible): GR00T
+#      pins ``pydantic==2.10.6`` (already installed in step 7 above), but
+#      ``mcp``/``openai-codex``/``pydantic-ai-slim`` declare
+#      ``pydantic>=2.11``/``>=2.12``. Installing this group with full
+#      dependency resolution silently upgrades pydantic and breaks GR00T's
+#      own pydantic-pinned code paths. Install with ``--no-deps`` for the
+#      pydantic-sensitive packages, then rely on step 3's ``mujoco`` pin and
+#      re-assert the ``pydantic`` pin below rather than let pip's resolver
+#      touch it. ``fastapi``/``starlette`` are NOT part of that conflict
+#      (fastapi works fine against pydantic 2.10.6) and are installed with
+#      full dependency resolution so ``starlette`` and the rest of fastapi's
+#      own transitive chain resolve correctly.
+# ---------------------------------------------------------------------------
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install \
+        "fastapi>=0.110" \
+        "uvicorn>=0.27" \
+        "httpx>=0.27" \
+        "msgpack>=1.0" \
+        "huggingface_hub>=0.24" \
+        "prompt-toolkit>=3.0.48" \
+        "imageio>=2.0"
+
+RUN pip install --no-deps \
+        "mcp>=1.27,<2" \
+        "pydantic-ai-slim[anthropic,openai]>=2.1" \
+        "claude-agent-sdk>=0.1.60" \
+        "openai-codex>=0.1.0b3"
+
+# Re-assert the GR00T-compatible pydantic pin: the ``--no-deps`` group above
+# does not touch it, but pin it back explicitly so a future edit to this
+# step (e.g. dropping ``--no-deps``) fails loudly at build time instead of
+# silently drifting.
+RUN pip install "pydantic==${PYDANTIC_VERSION}" --force-reinstall --no-deps
+
+RUN which ffmpeg >/dev/null && ffmpeg -version | head -1
+RUN python -c "\
+import fastapi, uvicorn, httpx, msgpack, pydantic; \
+assert pydantic.VERSION == '${PYDANTIC_VERSION}', pydantic.VERSION; \
+print('fastapi', fastapi.__version__); \
+print('pydantic', pydantic.VERSION)"
+
+# ---------------------------------------------------------------------------
+# 8. robocasa/gr00t top-level package shadowing fix (see VLA_ENV_SETUP.md
+#    "Bug 6", robocasa only): gr00t and robocasa are both editable-installed,
+#    and gr00t's __editable__.pth is processed first (alphabetical order at
+#    interpreter startup), so its meta_path finder for the name `robocasa`
+#    takes priority over robocasa's own finder. Plain `import robocasa` then
+#    resolves to a thin GR00T-local overlay package instead of the real
+#    robocasa/__init__.py (which registers ~370 gymnasium environments as an
+#    import-time side effect), and `gym.make("robocasa/<task>")` fails with
+#    "Environment `<task>` doesn't exist in namespace robocasa". Fix: a .pth
+#    file that reorders sys.meta_path at interpreter startup, applied to
+#    every process using this venv (including Ray worker subprocesses).
+# ---------------------------------------------------------------------------
+RUN if [ "$TRACK" = "robocasa" ]; then \
+        SITE_PACKAGES="$(python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')" && \
+        printf '%s\n' 'import sys; exec("def _fix():\n import sys\n gi=ri=None\n for i,f in enumerate(sys.meta_path):\n  m=getattr(f,'"'"'__module__'"'"',None)\n  if m=='"'"'__editable___gr00t_1_1_0_finder'"'"': gi=i\n  elif m=='"'"'__editable___robocasa_1_0_1_finder'"'"': ri=i\n if gi is None or ri is None or ri<gi: return\n sys.meta_path.insert(gi, sys.meta_path.pop(ri))\n_fix()")' \
+          > "$SITE_PACKAGES/zzz_robocasa_finder_precedence_fix.pth" && \
+        python -c "\
+import robocasa; \
+from robocasa.environments.kitchen.kitchen import REGISTERED_KITCHEN_ENVS; \
+assert len(REGISTERED_KITCHEN_ENVS) > 1, \
+    f'robocasa shadowing fix did not take effect, only {len(REGISTERED_KITCHEN_ENVS)} envs registered'; \
+print('robocasa shadowing fix OK,', len(REGISTERED_KITCHEN_ENVS), 'envs registered')"; \
+    fi
+
+# ---------------------------------------------------------------------------
+# 9. Verification baked into the image build: fail the build itself if any
+#    of the fixes above did not stick, rather than discovering it at
+#    container run time. The mounted Zetta source is checked after launch;
+#    see the command near the top of this file.
+# ---------------------------------------------------------------------------
+RUN python -c "\
+import mujoco, robosuite, pydantic; \
+assert mujoco.__version__ == '${MUJOCO_VERSION}', mujoco.__version__; \
+assert pydantic.VERSION == '${PYDANTIC_VERSION}', pydantic.VERSION; \
+print('mujoco', mujoco.__version__); \
+print('robosuite', robosuite.__version__); \
+print('pydantic', pydantic.VERSION)"
+
+RUN if [ "$TRACK" = "libero-pro" ]; then \
+        python -c "import openpi; print('openpi', openpi.__file__)"; \
+    else \
+        python -c "\
+import gr00t, flash_attn, transformers.image_utils as iu; \
+import inspect; \
+assert 'VideoInput' in inspect.getsource(iu); \
+print('gr00t', gr00t.__file__); \
+print('flash_attn', flash_attn.__version__)"; \
+    fi
+
+WORKDIR /workspace/Zetta-Embodiment
+CMD ["/bin/bash"]

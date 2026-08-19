@@ -1,10 +1,10 @@
 """Clean experiment-facing system prompt for the LIBERO driver.
 
-The task-indexed, seed-0-tuned RPent prompt is archived in
+The task-indexed, seed-0-tuned Zetta prompt is archived in
 ``system_legacy.py`` and is intentionally not imported by the runtime. This
 profile keeps only invariant evaluation rules, tool semantics, and a compact
 closed-loop workflow. Task-level strategy may enter only through an explicit
-immutable task-memory snapshot appended by ``rpent.cli.main``.
+immutable task-memory snapshot appended by ``zetta.cli.main``.
 """
 
 from __future__ import annotations

@@ -1,4 +1,4 @@
-"""Analyze valid baseline/integrated RPent result pairs."""
+"""Analyze valid baseline/integrated Zetta result pairs."""
 from __future__ import annotations
 
 import argparse

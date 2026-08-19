@@ -1,0 +1,19 @@
+[Unit]
+Description=Zetta GraspGen HTTP proposal bridge
+After=zetta-graspgen.service
+Requires=zetta-graspgen.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/zetta/zetta-robot-tools
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONPATH=/opt/zetta/zetta-robot-tools:/opt/zetta/third_party/GraspGen
+ExecStart=/opt/zetta/.venv-graspgen/bin/python robots/libero/graspgen_http_server.py --host 127.0.0.1 --port 18093 --zmq-host 127.0.0.1 --zmq-port 5558
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=900
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target

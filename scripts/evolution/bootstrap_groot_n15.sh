@@ -3,7 +3,7 @@ set -euo pipefail
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 repository_root=$(cd "$script_dir/../.." && pwd)
-runtime_root=${RPENT_VLA_RUNTIME_ROOT:-$repository_root/.runtime/vla-rollout}
+runtime_root=${ZETTA_VLA_RUNTIME_ROOT:-$repository_root/.runtime/vla-rollout}
 venv_root=${GROOT_VENV_ROOT:-$runtime_root/.venv-groot-n15}
 source_root=${GROOT_SOURCE_ROOT:-$repository_root/third_party/Isaac-GR00T}
 export CUDA_HOME=${CUDA_HOME:-/usr/local/cuda-12.8}

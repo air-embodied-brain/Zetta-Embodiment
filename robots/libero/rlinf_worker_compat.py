@@ -1,7 +1,7 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 """Compatibility bridge for RLinf LIBERO workers without ``env_call``.
 
-RPent's privileged evidence lives inside the spawned LIBERO environment. Some
+Zetta's privileged evidence lives inside the spawned LIBERO environment. Some
 RLinf releases expose camera-specific worker commands but no generic method
 call, so the parent process cannot read that evidence. The installer below is
 idempotent and leaves newer, native implementations untouched.
@@ -67,10 +67,10 @@ def compat_worker(
     env_fn_wrapper: Any,
     obs_bufs: Any = None,
 ) -> None:
-    """RLinf's LIBERO worker loop plus the RPent ``env_call`` command."""
+    """RLinf's LIBERO worker loop plus the Zetta ``env_call`` command."""
 
-    from rlinf.envs.libero import venv as upstream
-    from rlinf.envs.venv import ShArray
+    from zetta.envs.libero import vector_env as upstream
+    from zetta.envs.libero.vector_env import ShArray
 
     def encode_obs(observation: Any, buffer: Any) -> None:
         import numpy as np
@@ -201,10 +201,10 @@ def compat_worker(
         pipe.close()
 
 
-def install_rlinf_env_call_compat() -> str:
-    """Install the bridge for the active RLinf module when it is needed."""
+def install_env_call_bridge() -> str:
+    """Install ``env_call`` on Zetta's vector worker when needed."""
 
-    from rlinf.envs.libero import venv
+    from zetta.envs.libero import vector_env as venv
 
     worker_type = venv.ReconfigureSubprocEnvWorker
     if hasattr(worker_type, "env_call"):
@@ -212,3 +212,6 @@ def install_rlinf_env_call_compat() -> str:
     worker_type.env_call = _parent_env_call
     venv._worker = compat_worker
     return "installed"
+
+
+install_rlinf_env_call_compat = install_env_call_bridge

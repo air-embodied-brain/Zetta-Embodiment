@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 """Small client for the persistent RoboCasa chunk server."""
 
 from __future__ import annotations

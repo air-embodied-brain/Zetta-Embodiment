@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 from __future__ import annotations
 
 import json
@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from rpent.evolution.capacity import (
+from zetta.evolution.capacity import (
     DEFAULT_API_CONCURRENCY,
     DEFAULT_SLOT_LADDER,
     CapacityConfig,
@@ -393,7 +393,7 @@ def test_report_writer_rejects_urls_and_credentials(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="secret-like"):
         ensure_secret_free_report({"failure": "https://private.invalid/v1"})
     with pytest.raises(ValueError, match="secret-like"):
-        ensure_secret_free_report({"failure": "Bearer x"})
+        ensure_secret_free_report({"failure": "Bearer credential-material"})
 
 
 def test_cli_writes_secret_free_fake_report(tmp_path: Path) -> None:

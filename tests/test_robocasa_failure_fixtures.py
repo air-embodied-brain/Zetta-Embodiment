@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 from __future__ import annotations
 
 from robots.robocasa.dishwasher_critic import evaluate_slide_dishwasher_rack

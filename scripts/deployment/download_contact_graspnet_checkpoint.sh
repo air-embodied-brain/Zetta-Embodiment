@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-ROOT=${RPENT_DEPLOY_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}
+ROOT=${ZETTA_DEPLOY_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}
 DEST="$ROOT/third_party/contact_graspnet-src/checkpoints/scene_test_2048_bs3_hor_sigma_001"
 GDOWN="$ROOT/.venv-fast/bin/gdown"
 mkdir -p "$DEST"

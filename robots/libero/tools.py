@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 """LIBERO + OpenPI tool implementation."""
 from __future__ import annotations
 
@@ -15,9 +15,9 @@ from PIL import Image
 
 from robots.libero.env_client import LiberoEnvClient
 from robots.libero.graspgen import GraspGenAdapter
-from rpent.utils.logging import get_logger, get_output_dir
-from rpent.utils.sam3_client import Sam3Client
-from rpent.utils.vla_client import VLAClient
+from zetta.utils.logging import get_logger, get_output_dir
+from zetta.utils.sam3_client import Sam3Client
+from zetta.utils.vla_client import VLAClient
 
 logger = get_logger("libero")
 
@@ -394,7 +394,7 @@ class LiberoPrimitives:
                 outputs["multiview_path"] = str(mosaic_path)
                 outputs["multiview_frames"] = paired
             manifest = {
-                "schema_version": "rpent-libero-video-artifacts-v2",
+                "schema_version": "zetta-libero-video-artifacts-v2",
                 "status": "complete",
                 "frame_alignment": "frame index equals post-step index; frame 0 is reset",
                 "frame_count": n,

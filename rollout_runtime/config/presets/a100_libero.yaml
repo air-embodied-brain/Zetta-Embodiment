@@ -1,0 +1,123 @@
+# 8×A100 上的 libero preset（实现计划 M3 交付物 5）。
+#
+# M3 只交付这份配置本身；**M4 起职责收窄**为"真实 env + fake policy"的拓扑验证档，
+# `config/presets/a100_libero_pi05.yaml` 才是"真实 env + 真实 pi0.5"的验收档。
+# 保留两份的理由（§7 有记录）：不需要 VLA 权重就能在 GPU 机上验 8×8 双 group、
+# HybridComponentPlacement、通道容量与 libero 建池成本；两份的 cluster / transport /
+# 队列容量刻意一致，两组吞吐数字相减就是 GPU forward 的成本。
+#
+# 与 local_ray_fake 的三处实质差别：
+#   1. cluster.component_placement 显式声明 → 走 rlinf 的 HybridComponentPlacement；
+#      env 是 CPU-subproc（保留的 node_group `node`，不占卡），rollout 每 rank 一张卡。
+#   2. 队列更深：图像 payload 更大、单次推理更慢，命令与请求面都需要更多缓冲。
+#   3. scheduler 的 max_batch_size 按"每 rank 一份完整 VLA + 数据并行"给到 8。
+
+env_family: libero
+env_config:
+  # 正式名与别名都接受，见 backends/rlinf_env.py::_ALIASES。
+  task_suite_name: libero_10
+  task_id: 3
+  num_steps_wait: 15
+  action_dim: 7
+  # 与 a100_libero_pi05.yaml 保持一致：两份 preset 只允许在 policy 后端上不同，
+  # 否则"同拓扑吞吐相减 = GPU forward 成本"这个用途就不成立（chunk 长度直接决定
+  # 每个 policy_step 要跑几步仿真与渲染）。由
+  # test_ray_launch.py::test_the_two_a100_presets_differ_only_in_the_policy_backend 守住。
+  # 2026-08-07 与 pi05 preset 一起从 10 降到 5，对齐 legacy 臂的动作块长度。
+  chunk_size: 5
+  max_episode_steps: 512
+  camera_height: 256
+  camera_width: 256
+  action_model_type: openpi
+  camera_depths: true
+  return_all_frames: false
+  libero_variant: standard
+
+cluster:
+  num_nodes: 1
+  component_placement:
+    # **只声明 rollout**。EnvWorker 是 CPU 上的 libero subproc，要的是"同一个节点上
+    # N 个进程"，这正是 NodePlacementStrategy 的语义；而 component_placement 里的
+    # placement 字符串枚举的是**硬件 rank**，写 `node_group: node` + `placement: "0"`
+    # 只会得到 1 个进程（一个节点一份硬件），env_worker.num_ranks 被静默忽略——M4 在
+    # 多 GPU 主机上实测到的真实缺陷（症状是第 2 个 create_session 就 QUOTA_EXCEEDED）。
+    # 因此 env 不进 component_placement，由 env_worker.placement_strategy=node 走
+    # NodePlacementStrategy([0] * num_ranks)。
+    # 每个 rollout rank 一张 A100（tensor_parallel_size=1，见架构文档 3.4.1）。
+    rollout:
+      placement: "0-7"
+
+gateway:
+  gateway_epoch: 1
+  maintenance_interval_seconds: 1.0
+  default_lease_seconds: 1800.0
+  error_retention_seconds: 300.0
+  result_ttl_seconds: 300.0
+  heartbeat_timeout_seconds: 60.0
+  max_concurrency_per_rank: 32
+  metrics_namespace: rr
+
+transport:
+  kind: ray_channel
+  command_queue_size: 256
+  control_queue_size: 32
+  result_queue_size: 512
+  infer_request_queue_size: 256
+  infer_response_queue_size: 256
+  # 真实 VLA 单次推理可达秒级，超时只回 DEADLINE_EXCEEDED 不取消 operation（§3.1.2）。
+  command_timeout_seconds: 600.0
+
+env_worker:
+  group_name: env
+  num_ranks: 8
+  # CPU 子进程：node 策略 → NodePlacementStrategy([0] * 8)，不占卡。
+  placement_strategy: node
+  # **2 slot / rank**（M7 调大）。历史：M4 实测"一个 Ray actor 里起第 2 个 libero 子进程会崩"
+  # 并归因 EGL；M6 推翻了这个归因（真凶是 `create_binding` 并发建池的竞态，一个 actor 里因此
+  # 有 4 个而不是 2 个 libero 子进程并同时 reconfigure），修掉后一个 actor 放 2 个 slot 在两种
+  # core_form 下都通（runtime validation notes §10.6 / §10.7）；但当时只在 fake policy 与 1–2 个
+  # rollout rank 下复跑过，所以保持 1，把"满载复验"留给 M7。
+  # **M7 已复验**：8 env rank × 4 rollout rank × 16 session（= 2 slot/rank）+ **4 份真实
+  # pi0.5** 一轮 bench 全绿，12.1 policy_step/s、121.4 env-step/s、p50 1300 ms、8 个 rank
+  # 都在干活（runtime validation notes §11.4）。对比 M4 §6.6 (a) 同拓扑 1 slot/rank 的
+  # 9.1 policy_step/s，翻倍 slot 换到约 +33% 吞吐。
+  # **仍然不要直接调到 4**：那个档位只在 2 env rank（§6.11 那轮）下验过，8 rank 满载没试。
+  max_sessions_per_rank: 2
+  default_pool_size: 1
+  seed_offset: 0
+
+rollout_worker:
+  group_name: rollout
+  num_ranks: 8
+  placement_strategy: packed
+  tensor_parallel_size: 1
+  pipeline_parallel_size: 1
+  policy_id: pi05
+  policy_family: openpi
+  # 本档刻意用 fake policy：只验拓扑，不需要 VLA 权重。真实链路见 a100_libero_pi05.yaml。
+  policy_backend: fake
+  device: cuda
+  dtype: bfloat16
+  max_concurrent_inferences: 32
+  scheduler:
+    max_batch_size: 8
+    max_wait_ms: 20.0
+    max_queue_depth: 256
+    max_inflight_per_application: 128
+    max_inflight_per_session: 1
+    # 启用 cuda_graph 的 policy 必须固定 batch 并 padding（mlp_policy.py:392-437）；
+    # pi0.5 默认不开 cuda_graph，所以这里是 null（动态 batch）。
+    fixed_batch_size: null
+
+admission:
+  require_auth: false
+  tokens: {}
+  max_sessions_per_application: 64
+  max_inflight_operations_per_application: 256
+  max_inflight_operations_per_session: 2
+  max_total_inflight_operations: 512
+
+payload:
+  inline_threshold_bytes: 262144
+  request_limit_bytes: 8388608
+  image_codec: png

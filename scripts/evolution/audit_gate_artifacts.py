@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 """Audit paired gate artifacts and build a human-readable video catalog."""
 
 from __future__ import annotations

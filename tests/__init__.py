@@ -1,1 +1,1 @@
-"""RPent regression tests."""
+"""Zetta regression tests."""

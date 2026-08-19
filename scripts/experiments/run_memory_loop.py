@@ -27,19 +27,19 @@ except ImportError:  # Windows unit-test import compatibility.
     fcntl = None  # type: ignore[assignment]
 
 # Direct script execution puts only ``scripts/experiments`` on sys.path.  Bind
-# imports to this checkout rather than an older installed RPent package.
+# imports to this checkout rather than an older installed Zetta package.
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from rpent.memory.task_memory import (
+from zetta.memory.task_memory import (
     TaskMemoryStore,
     canonical_json,
     canonical_sha256,
     validate_parameter_block,
 )
-from rpent.tools.contracts import READ_ONLY_CONTRACT
-from rpent.tools.toolkit import Toolkit
+from zetta.tools.contracts import READ_ONLY_CONTRACT
+from zetta.tools.toolkit import Toolkit
 from scripts.experiments.run_paired_episode import (
     _episode_command,
     _git,
@@ -137,7 +137,7 @@ def _planner_environment(common: dict[str, Any]) -> dict[str, str]:
     if base_url:
         result["CODEX_BASE_URL"] = str(base_url)
     if common.get("use_local_adapter_key_placeholder"):
-        result["CODEX_API_KEY"] = "rpent-local-adapter"
+        result["CODEX_API_KEY"] = "zetta-local-adapter"
     return result
 
 
@@ -469,8 +469,8 @@ def _run_one_episode(
     # Physical MCP calls are side effects and Codex rejects them in read-only
     # mode. Immutability is instead enforced by not exposing the mutable store,
     # output-only MCP writes, and pre/post hash guards over every memory surface.
-    env["RPENT_CODEX_SANDBOX"] = "full-access"
-    env["RPENT_EPISODE_MEMORY_FROZEN"] = "1"
+    env["ZETTA_CODEX_SANDBOX"] = "full-access"
+    env["ZETTA_EPISODE_MEMORY_FROZEN"] = "1"
     env["HF_HUB_OFFLINE"] = "1"
     env.update(_planner_environment(common))
     env.update(_tool_endpoint_environment(common))
@@ -724,7 +724,7 @@ def _memory_update_prompt(previous: dict[str, Any], evidence: dict[str, Any]) ->
         "success_checks": ["observable check"],
         "open_questions": ["uncertainty needing more rollouts"],
     }
-    return f"""You are the POST-EPISODE task-memory updater for RPent. The robot
+    return f"""You are the POST-EPISODE task-memory updater for Zetta. The robot
 episode has fully ended; this is the only legal update boundary. Rewrite the
 whole parameter block for the same task using the prior block and this rollout.
 
@@ -739,7 +739,7 @@ Rules:
    contradictory evidence as an open question.
 5. You may inspect the listed final images in read-only mode if useful. Do not
    write files or run experiments.
-6. Never override the static RPent prompt or a tool contract. In particular,
+6. Never override the static Zetta prompt or a tool contract. In particular,
    pi0_pick success is only a hint that requires perceptual confirmation, and
    task success is authoritative only when libero_terminated is true.
 7. Call the finish tool exactly once. memory_json must encode exactly the seven
@@ -778,7 +778,7 @@ def _update_memory_after_episode(
 ) -> dict[str, Any]:
     # Keep the experiment analysis/build path importable on machines that do not
     # have the H100 Codex SDK runtime installed.
-    from rpent.planner.codex import CodexPlanner
+    from zetta.planner.codex import CodexPlanner
 
     evidence = _update_evidence(result)
     update_root = (
@@ -802,8 +802,8 @@ def _update_memory_after_episode(
                 + validation_errors[-1]
                 + "\nReturn a corrected full block.\n"
             )
-        old_sandbox = os.environ.get("RPENT_CODEX_SANDBOX")
-        os.environ["RPENT_CODEX_SANDBOX"] = "read-only"
+        old_sandbox = os.environ.get("ZETTA_CODEX_SANDBOX")
+        os.environ["ZETTA_CODEX_SANDBOX"] = "read-only"
         try:
             planner = CodexPlanner(
                 output_dir=str(attempt_dir),
@@ -820,9 +820,9 @@ def _update_memory_after_episode(
             )
         finally:
             if old_sandbox is None:
-                os.environ.pop("RPENT_CODEX_SANDBOX", None)
+                os.environ.pop("ZETTA_CODEX_SANDBOX", None)
             else:
-                os.environ["RPENT_CODEX_SANDBOX"] = old_sandbox
+                os.environ["ZETTA_CODEX_SANDBOX"] = old_sandbox
         finish = planner_result.finish_result or {}
         if planner_result.error:
             rendered_error = str(planner_result.error)
@@ -1148,7 +1148,7 @@ def _parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
     init = sub.add_parser("init")
     init.add_argument("--manifest", type=Path, required=True)
-    init.add_argument("--protocol-id", default="rpent-episode-memory-loop-v1")
+    init.add_argument("--protocol-id", default="zetta-episode-memory-loop-v1")
     init.add_argument("--repo", type=Path, required=True)
     init.add_argument("--python", type=Path, required=True)
     init.add_argument("--output-root", type=Path, required=True)

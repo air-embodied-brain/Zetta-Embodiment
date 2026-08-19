@@ -3,9 +3,9 @@ requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "rpent"
+name = "zetta"
 version = "0.0.0"
-authors = [{ name = "RPent Contributors" }]
+authors = [{ name = "Zetta Contributors" }]
 description = "Embodied agent framework for coordinating high-level reasoning and robot skills"
 readme = {file = "README.md", content-type = "text/markdown"}
 requires-python = ">=3.10,<3.13"
@@ -32,6 +32,7 @@ dependencies = [
     "fastapi>=0.110",
     "uvicorn>=0.27",
     "httpx>=0.27",
+    "msgpack>=1.0",
     "mcp>=1.27,<2",
     "claude-agent-sdk>=0.1.60",
     "openai-codex>=0.1.0b3",
@@ -42,14 +43,14 @@ dependencies = [
 ]
 
 [project.scripts]
-rpent = "rpent.cli.main:main"
-rpent-evolve = "rpent.evolution.cli:main"
+zetta = "zetta.cli.main:main"
+zetta-evolve = "zetta.evolution.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/RLinf/RPent"
-Repository = "https://github.com/RLinf/RPent"
-Documentation = "https://rpent.readthedocs.io/en/latest/"
-"Bug Report" = "https://github.com/RLinf/RPent/issues"
+Homepage = "https://github.com/air-embodied-brain/Zetta-Embodiment"
+Repository = "https://github.com/air-embodied-brain/Zetta-Embodiment"
+Documentation = "https://github.com/air-embodied-brain/Zetta-Embodiment/tree/main/docs"
+"Bug Report" = "https://github.com/air-embodied-brain/Zetta-Embodiment/issues"
 
 [project.optional-dependencies]
 test = [
@@ -59,26 +60,22 @@ test = [
     "imageio-ffmpeg>=0.5,<1",
     "scipy>=1.10,<2",
 ]
-rlinf = [
-    "rpent-rlinf",
+ray = [
+    "ray",
+    "omegaconf>=2.3,<3",
 ]
 openpi = [
     "rlinf-openpi",
 ]
-libero = [
-    "rlinf-libero",
-]
-libero-pro = [
-    "rpent-rlinf",
-    "rpent[libero]",
-    "rpent-liberopro",
-]
-libero-plus = [
-    "rpent[libero]",
-    "rlinf-liberoplus",
-]
+libero = []
+# Simulator distributions are intentionally not declared here: liberopro and
+# liberoplus publish transitive dependencies on the main RLinf framework. The
+# deployment script installs the simulator with --no-deps and lists its
+# supported runtime dependencies explicitly.
+libero-pro = []
+libero-plus = []
 full = [
-    "rpent[rlinf,openpi,libero-pro,sam3]",
+    "zetta[ray,openpi,libero-pro,sam3]",
 ]
 sam3 = [
     "sam3==0.1.4",
@@ -90,13 +87,25 @@ sam3 = [
 [tool.uv]
 prerelease = "allow"
 
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "remote: requires a configured GPU host (real env / VLA backends)",
+    "ray: needs a local Ray cluster (rollout runtime data plane)",
+    "ray_launch: launches Zetta worker groups in separate Ray processes (slow)",
+]
+
 [tool.setuptools]
 include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["rpent*", "robots*"]
+include = ["zetta*", "robots*", "rollout_runtime*"]
 exclude = ["tests*", "docs*", "examples*", "docker*", "toolkits*"]
+
+[tool.setuptools.package-data]
+"rollout_runtime.config" = ["presets/*.yaml"]
 
 [tool.ruff]
 line-length = 88
@@ -104,7 +113,7 @@ indent-width = 4
 target-version = "py311"
 
 [tool.ruff.lint]
-isort = {known-first-party = ["rpent", "robots"]}
+isort = {known-first-party = ["zetta", "robots", "rollout_runtime"]}
 select = ["C", "E", "F", "I", "W", "CPY001", "RUF013", "UP006", "PERF102", "PLC1802", "PLC0208", "DOC102", "DOC202", "DOC403", "DOC502"]
 ignore = [
     "C901", # "complex-structure"

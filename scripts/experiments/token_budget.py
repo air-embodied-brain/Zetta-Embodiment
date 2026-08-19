@@ -23,7 +23,7 @@ try:  # pragma: no cover - production budget gates run on Linux.
 except ImportError:  # pragma: no cover - Windows unit-test compatibility.
     fcntl = None  # type: ignore[assignment]
 
-from rpent.memory.task_memory import canonical_json, canonical_sha256
+from zetta.memory.task_memory import canonical_json, canonical_sha256
 
 SCHEMA_VERSION = 1
 

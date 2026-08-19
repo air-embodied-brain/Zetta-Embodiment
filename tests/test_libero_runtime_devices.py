@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 from __future__ import annotations
 
 import pytest
@@ -12,7 +12,7 @@ from robots.libero.runtime_devices import (
     require_isolated_runtime_devices,
     vla_runtime_info,
 )
-from rpent.utils.rpc import RpcError
+from zetta.utils.rpc import RpcError
 
 
 def test_preregistered_libero_devices_require_physical_gpu_isolation() -> None:
@@ -29,18 +29,18 @@ def test_runtime_worker_gpu_must_be_preregistered_and_isolated() -> None:
         default_environment_gpu=5,
         allowed_environment_gpus=(5, 6),
         vla_gpu=7,
-        environment={"RPENT_LIBERO_GPU": "6"},
+        environment={"ZETTA_LIBERO_GPU": "6"},
         vla_endpoint="http://127.0.0.1:18811",
     )
     require_isolated_runtime_devices(valid)
     assert valid["environment_gpu"] == 6
-    assert valid["environment_gpu_source"] == "RPENT_LIBERO_GPU"
+    assert valid["environment_gpu_source"] == "ZETTA_LIBERO_GPU"
 
     invalid = describe_runtime_devices(
         default_environment_gpu=5,
         allowed_environment_gpus=(5, 6),
         vla_gpu=7,
-        environment={"RPENT_LIBERO_GPU": "4"},
+        environment={"ZETTA_LIBERO_GPU": "4"},
         vla_endpoint="http://127.0.0.1:18811",
     )
     with pytest.raises(RuntimeError, match="not preregistered"):

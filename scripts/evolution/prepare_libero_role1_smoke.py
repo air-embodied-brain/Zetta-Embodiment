@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 """Create an explicitly non-formal bundle for the LIBERO Role1 runtime smoke.
 
 The step predicate is intentionally synthetic.  It validates the online
@@ -18,12 +18,12 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 if str(REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(REPOSITORY_ROOT))
 
-from rpent.evolution.jsonio import (  # noqa: E402
+from zetta.evolution.jsonio import (  # noqa: E402
     atomic_write_json,
     canonical_sha256,
     read_json,
 )
-from rpent.evolution.models import (  # noqa: E402
+from zetta.evolution.models import (  # noqa: E402
     CandidateBundle,
     CriticRule,
     RecoveryRule,

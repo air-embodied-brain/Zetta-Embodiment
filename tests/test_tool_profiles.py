@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from rpent.tools.toolkit import Toolkit
+from zetta.tools.toolkit import Toolkit
 from scripts.experiments.run_paired_episode import _episode_command
 
 

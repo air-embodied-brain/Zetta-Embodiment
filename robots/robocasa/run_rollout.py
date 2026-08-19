@@ -1,9 +1,10 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 """Pure-VLA / critic-interrupted RoboCasa rollout entrypoint."""
 
 from __future__ import annotations
 
 import argparse
+import asyncio
 import hashlib
 import json
 import os
@@ -11,7 +12,7 @@ import threading
 import time
 import traceback
 import uuid
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import replace
 from datetime import datetime, timezone
@@ -20,6 +21,8 @@ from typing import Any
 
 from robots.robocasa.env_client import RoboCasaEnvClient
 from robots.robocasa.groot_client import Gr00tClient
+import numpy as np
+
 from robots.robocasa.recovery_controller import RecoveryController
 from robots.robocasa.role1_actor import Role1ActorError, Role1EpisodeActor
 from robots.robocasa.role1_agent import (
@@ -31,17 +34,34 @@ from robots.robocasa.role1_agent import (
 from robots.robocasa.tool_bindings import binding_for_task
 from robots.robocasa.tool_catalog import DEFAULT_ROBOCASA_TOOL_CATALOG
 from robots.robocasa.tool_runtime import ToolRuntime
-from rpent.evolution.jsonio import atomic_write_json, canonical_sha256, read_json
-from rpent.evolution.models import (
+from rollout_runtime.api.ids import SessionId
+from rollout_runtime.api.messages import (
+    CreateSessionRequest,
+    EnvSpecMsg,
+    PolicyRequest,
+    ResetSpec,
+    StepResult,
+)
+from rollout_runtime.api.result import Err, Result
+from rollout_runtime.core.payload import decode_array, encode_array
+from rollout_runtime.serve.client import RemoteRuntimeClient
+from zetta.evolution.jsonio import atomic_write_json, canonical_sha256, read_json
+from zetta.evolution.models import (
     CandidateBundle,
     EpisodeRecord,
     FailureSegment,
 )
-from rpent.evolution.trajectory import (
+from zetta.evolution.trajectory import (
     TrajectoryArtifacts,
     index_episode_trajectory,
 )
-from rpent.evolution.visual_artifacts import build_episode_visual_artifacts
+from zetta.evolution.visual_artifacts import build_episode_visual_artifacts
+
+RUNTIME_APPLICATION_ID = "zetta-robocasa"
+"""Tenant identity reported to the Gateway; the bearer token is authoritative."""
+
+ROBOCASA_EXTENSION_NAMESPACE = "robocasa"
+"""Family extension namespace declared by ``core.env_registry.ROBOCASA_EXTENSIONS``."""
 
 
 def _now() -> str:
@@ -138,6 +158,115 @@ def _role1_artifact_index(role1_root: Path) -> dict[str, str]:
     }
 
 
+class RuntimeOperationError(RuntimeError):
+    """A batch entry came back as ``Err``, or the batch shape was wrong.
+
+    Kept distinct from ``ValueError`` so that ``main()``'s
+    ``infrastructure_error.json`` branch records a runtime/transport failure
+    under its own name instead of hiding inside a generic ``RuntimeError``.
+    """
+
+
+def _single(results: Sequence[Result[Any]], *, operation: str) -> Any:
+    """Unwrap a batch-of-one result.
+
+    Args:
+        results: The list returned by any ``RemoteRuntimeClient`` operation.
+        operation: Operation name for the error message.
+
+    Returns:
+        The single success payload.
+
+    Raises:
+        RuntimeOperationError: The batch had a length other than one, or the
+            entry is an ``Err`` (a per-item failure delivered inside a 200
+            response, see ``serve/client.py``).
+    """
+    if len(results) != 1:
+        raise RuntimeOperationError(
+            f"runtime {operation} returned {len(results)} results for one session"
+        )
+    result = results[0]
+    if isinstance(result, Err):
+        info = result.error
+        raise RuntimeOperationError(
+            f"runtime {operation} failed: {info.code.name}: {info.message}"
+        )
+    return result.value
+
+
+def _chunk_result(step: StepResult, *, vla: dict[str, Any]) -> dict[str, Any]:
+    """Normalize a ``StepResult`` into the legacy ``execute_chunk`` dict.
+
+    Both branches of the loop (``policy_step`` and ``action_step``) produce a
+    ``StepResult``; every downstream consumer in this file — ``chunks.jsonl``,
+    ``actions.jsonl``, ``states.jsonl``, the strict-Gen0 attestation, the
+    Critic-Recovery advance and ``EpisodeRecord`` — was written against the
+    RoboCasa HTTP payload.  Translating once, here, keeps those artifact schemas
+    stable so migrated and pre-migration episode records stay comparable
+    (Stage 9 replays the same seeds and diffs them).
+
+    Per-step audit fields (``applied_action`` / ``action_sha256`` /
+    ``observation_sha256`` / named ``state``) ride in ``PerStepRecord.info``:
+    that is the only per-step channel in the protocol, because
+    ``PerStepRecord.observation`` is dropped by design (per-step frames carry no
+    images and would only burn payload budget).
+
+    Args:
+        step: The runtime step result.
+        vla: Inference metadata to record alongside the environment result.
+
+    Returns:
+        The legacy chunk dict.
+    """
+    info = dict(step.info)
+    steps: list[dict[str, Any]] = []
+    for record in step.per_step or ():
+        record_info = dict(record.info)
+        steps.append(
+            {
+                "step_index": int(record.step_index),
+                "applied_action": record_info.get("applied_action"),
+                "action_sha256": record_info.get("action_sha256"),
+                "observation_sha256": record_info.get("observation_sha256"),
+                "state": dict(record_info.get("raw_state") or {}),
+                "reward": float(record.reward),
+                "official_success": bool(record_info.get("official_success")),
+                "success_latched": bool(record_info.get("success_latched")),
+                "terminated": bool(record.terminated),
+                "truncated": bool(record.truncated),
+                "proposal_rule_ids": list(record_info.get("proposal_rule_ids") or ()),
+            }
+        )
+    return {
+        "executed_horizon": int(step.executed_horizon),
+        "steps": steps,
+        "critic_proposals": [dict(item) for item in info.get("critic_proposals") or ()],
+        "reward": float(step.reward),
+        "terminated": bool(step.terminated),
+        "truncated": bool(step.truncated),
+        "official_success": bool(info.get("official_success")),
+        "success_latched": bool(info.get("success_latched")),
+        "success_first_step": info.get("success_first_step"),
+        "authoritative_success": bool(info.get("authoritative_success")),
+        "task_program_enabled": bool(info.get("task_program_enabled")),
+        "critic_rule_count": int(info.get("critic_rule_count", 0)),
+        "video_paths": dict(info.get("video_paths") or {}),
+        "environment_write_owner": info.get("environment_write_owner"),
+        "vla": vla,
+        "runtime": {
+            "request_id": str(step.request_id),
+            "episode_id": None if step.episode_id is None else int(step.episode_id),
+            "operation_seq": (
+                None if step.operation_seq is None else int(step.operation_seq)
+            ),
+            "model_version": info.get("model_version"),
+            "policy_id": info.get("policy_id"),
+            "side_effect_applied": bool(step.side_effect_applied),
+        },
+    }
+
+
 def _advance_recovery_after_chunk(
     *,
     recovery_controller: RecoveryController,
@@ -170,8 +299,229 @@ def _advance_recovery_after_chunk(
     return True
 
 
-def _run_with_environment(
-    args: argparse.Namespace, environment: RoboCasaEnvClient
+class RolloutSession:
+    """One rollout's view of the shared Runtime: a single session, unbatched.
+
+    Every method here is a batch-of-one call against ``RemoteRuntimeClient``
+    plus the ``Err`` unwrap; nothing else in this file touches the wire types.
+    The class also owns the lease: a Goal/Long episode can run for many minutes
+    of simulator time, longer than the Gateway's default lease, so the loop
+    renews before the lease can expire underneath a running episode.
+
+    Attributes:
+        client: The shared runtime's HTTP client.
+        session_id: This rollout's session.
+        lease_seconds: Requested lease length; the server may clamp it.
+        lease_expiration: Current lease deadline as a unix timestamp.
+        episode_started: Whether ``reset`` has completed at least once.
+    """
+
+    def __init__(
+        self,
+        client: Any,
+        session_id: SessionId,
+        *,
+        lease_seconds: float,
+        lease_expiration: float,
+    ) -> None:
+        """Initialize the adapter.
+
+        Args:
+            client: A ``RemoteRuntimeClient``-shaped object.
+            session_id: The created session.
+            lease_seconds: Requested lease length.
+            lease_expiration: Lease deadline reported by ``create_sessions``.
+        """
+        self.client = client
+        self.session_id = session_id
+        self.lease_seconds = float(lease_seconds)
+        self.lease_expiration = float(lease_expiration)
+        self.episode_started = False
+        self.finalized = False
+        self.closed = False
+
+    @property
+    def _ids(self) -> list[SessionId]:
+        return [self.session_id]
+
+    async def reset(self, reset_spec: ResetSpec) -> StepResult:
+        """Reset the episode.
+
+        Args:
+            reset_spec: Episode parameters; family-private fields ride in
+                ``options`` (see ``backends/robocasa_current.py::_EpisodeOptions``).
+
+        Returns:
+            The reset step result.
+        """
+        step = _single(
+            await self.client.reset(self._ids, reset_spec), operation="reset"
+        )
+        self.episode_started = True
+        return step
+
+    async def snapshot(self, *, include_images: bool = True) -> dict[str, Any]:
+        """Read the RoboCasa-native observation payload (D8 extension).
+
+        ``Observation`` cannot carry it: its ``state`` is a flat vector (the
+        named keys Role1 and the privileged-evidence contract read would be
+        lost) and its images are PNG payload refs rather than the data URLs the
+        audited Role1 evidence is hashed from.
+
+        Args:
+            include_images: Whether to include the three camera data URLs.
+
+        Returns:
+            ``RoboCasaSession.snapshot`` output, identical to the payload the
+            debug HTTP server returns from ``POST /observation``.
+        """
+        return dict(
+            _single(
+                await self.client.extension_call(
+                    self._ids,
+                    ROBOCASA_EXTENSION_NAMESPACE,
+                    "snapshot",
+                    {"include_images": bool(include_images)},
+                ),
+                operation="extension_call robocasa.snapshot",
+            )
+        )
+
+    async def finalize_episode(self) -> dict[str, Any]:
+        """Flush episode video artifacts while keeping the environment warm.
+
+        Returns:
+            ``{"finalized": True, "video_paths": ..., "video_manifest": ...}``.
+        """
+        result = dict(
+            _single(
+                await self.client.extension_call(
+                    self._ids,
+                    ROBOCASA_EXTENSION_NAMESPACE,
+                    "finalize_episode",
+                    {},
+                ),
+                operation="extension_call robocasa.finalize_episode",
+            )
+        )
+        self.finalized = True
+        return result
+
+    async def policy_step(self, policy_request: PolicyRequest) -> StepResult:
+        """Atomic observe -> infer -> chunk_step (the no-Role1 fast path).
+
+        Args:
+            policy_request: Inference parameters.
+
+        Returns:
+            The step result.
+        """
+        return _single(
+            await self.client.policy_step(self._ids, policy_request),
+            operation="policy_step",
+        )
+
+    async def policy_infer(
+        self, policy_request: PolicyRequest
+    ) -> tuple[list[list[float]], dict[str, Any]]:
+        """Infer without writing to the environment (the Role1 review path).
+
+        Args:
+            policy_request: Inference parameters.
+
+        Returns:
+            ``(actions, metadata)`` where ``actions`` is a plain nested list of
+            floats — exactly the shape Role1 and ``action_step`` expect.
+
+        Raises:
+            RuntimeOperationError: The policy returned no action chunk.
+        """
+        result = _single(
+            await self.client.policy_infer(self._ids, policy_request),
+            operation="policy_infer",
+        )
+        if result.actions is None:
+            raise RuntimeOperationError("policy_infer returned no action chunk")
+        block = np.asarray(decode_array(result.actions), dtype=np.float32)
+        if block.ndim != 2:
+            raise RuntimeOperationError(
+                f"policy_infer returned shape {tuple(int(v) for v in block.shape)}, "
+                "expected [chunk, action_dim]"
+            )
+        metadata = {
+            "source": "policy_infer",
+            "horizon": int(block.shape[0]),
+            "model_version": result.model_version,
+            "observation_step_index": int(result.observation_step_index),
+            "action_chunk_sha256": hashlib.sha256(block.tobytes()).hexdigest(),
+            "auxiliary_outputs": dict(result.auxiliary_outputs),
+            "policy_id": dict(result.info).get("policy_id"),
+        }
+        return [[float(value) for value in row] for row in block], metadata
+
+    async def action_step(self, actions: Sequence[Sequence[float]]) -> StepResult:
+        """Execute an externally decided action chunk.
+
+        Args:
+            actions: ``[chunk, action_dim]`` actions (Role1's reviewed chunk).
+
+        Returns:
+            The step result.
+        """
+        block = np.asarray(actions, dtype=np.float32)
+        return _single(
+            await self.client.action_step(self._ids, [encode_array(block)]),
+            operation="action_step",
+        )
+
+    async def renew_if_needed(self, *, now: float | None = None) -> None:
+        """Renew the lease before it can expire during a running episode.
+
+        Args:
+            now: Injectable clock reading; defaults to ``time.time()``.
+        """
+        moment = time.time() if now is None else now
+        margin = max(30.0, self.lease_seconds / 4.0)
+        if moment < self.lease_expiration - margin:
+            return
+        status = _single(
+            await self.client.renew_sessions(self._ids, self.lease_seconds),
+            operation="renew_sessions",
+        )
+        self.lease_expiration = float(status.lease_expiration)
+
+    async def close(self) -> dict[str, Any]:
+        """Close the session, returning its slot to the pool for reuse.
+
+        This is the Runtime-native replacement for the old
+        ``RoboCasaEnvClient.release()``: the binding, the env slot and the
+        session state machine are all Gateway-owned now.
+
+        Returns:
+            ``{"session_closed": bool, "session_id": str}``; a failure is
+            recorded rather than raised so that a cleanup error cannot mask the
+            episode's own outcome.
+        """
+        try:
+            _single(
+                await self.client.close_sessions(self._ids),
+                operation="close_sessions",
+            )
+        except Exception as exc:
+            return {
+                "session_closed": False,
+                "session_id": str(self.session_id),
+                "failure_class": type(exc).__name__,
+            }
+        self.closed = True
+        return {"session_closed": True, "session_id": str(self.session_id)}
+
+
+async def _run_with_session(
+    args: argparse.Namespace,
+    environment: RolloutSession,
+    *,
+    env_spec_digest: str = "",
 ) -> EpisodeRecord:
     output = Path(args.output_dir)
     output.mkdir(parents=True, exist_ok=True)
@@ -236,15 +586,31 @@ def _run_with_environment(
                 "tool_names": list(DEFAULT_ROBOCASA_TOOL_CATALOG.names()),
                 "manifest_sha256": DEFAULT_ROBOCASA_TOOL_CATALOG.digest,
             }
-    vla = Gr00tClient(args.vla_endpoint, timeout_s=args.vla_timeout_s)
-    reset = environment.reset(
-        task=args.task,
-        seed=args.seed,
-        split=args.split,
-        bundle_sha256=bundle.sha256 if bundle else None,
-        video_dir=str(output / "videos"),
-        enable_task_program=enable_task_program,
+    # The Critic rules are frozen for the whole episode, so they are delivered
+    # once through ``ResetSpec.options`` instead of per chunk: they cannot live
+    # in ``env_config`` (that feeds the env-pool digest, so a per-episode value
+    # would cold-start a new simulator every episode) and ``RoboCasaSession``
+    # itself refuses a mid-episode rule change.
+    critic_rules = [rule.as_dict() for rule in bundle.critic_rules] if bundle else []
+    reset_step = await environment.reset(
+        ResetSpec(
+            seed=args.seed,
+            instruction=args.instruction,
+            options={
+                "video_dir": str(output / "videos"),
+                "bundle_sha256": bundle.sha256 if bundle else None,
+                "critic_rules": critic_rules,
+                "interrupt_on_proposal": bool(critic_rules),
+                "capture_event_images": True,
+                "enable_task_program": enable_task_program,
+            },
+        )
     )
+    # ``robocasa.snapshot`` rather than ``reset_step.observation``: the audited
+    # observation identity and Role1's evidence are both defined over the named
+    # state dict and the JPEG data URLs that ``RoboCasaSession.snapshot``
+    # produces (see ``RolloutSession.snapshot``).
+    reset = await environment.snapshot(include_images=True)
     if baseline_mode == "strict_pure_vla" and (
         reset.get("task_program_enabled") is not False
         or int(reset.get("critic_rule_count", 0)) != 0
@@ -271,7 +637,6 @@ def _run_with_environment(
             states_path,
             {"step_index": 0, "state": initial_state, "event": "reset"},
         )
-    critic_rules = [rule.as_dict() for rule in bundle.critic_rules] if bundle else []
     role1_actor: Role1EpisodeActor | None = None
     recovery_controller: RecoveryController | None = None
     if args.role1_planner != "none" and baseline_mode != "strict_pure_vla":
@@ -280,9 +645,9 @@ def _run_with_environment(
             store=decision_store,
             output_root=output / "role1" / "invocations",
             planner_type=args.role1_planner,
-            model=args.role1_model or os.environ.get("RPENT_ROLE1_MODEL"),
+            model=args.role1_model or os.environ.get("ZETTA_ROLE1_MODEL"),
             reasoning_effort=args.reasoning_effort,
-            base_url=os.environ.get("RPENT_ROLE1_BASE_URL"),
+            base_url=os.environ.get("ZETTA_ROLE1_BASE_URL"),
             max_tokens=args.role1_max_tokens,
             timeout_s=args.role1_timeout_s,
             max_turns=args.role1_max_turns,
@@ -320,14 +685,17 @@ def _run_with_environment(
         and not truncated
         and actions_executed < args.max_actions
     ):
-        observation = environment.observation(include_images=True)
+        await environment.renew_if_needed()
         inference_seed = _chunk_seed(args.policy_rng, chunks)
-        actions, vla_meta = vla.act(
-            observation,
-            instruction=instruction,
-            inference_seed=inference_seed,
+        policy_request = PolicyRequest(
+            policy_id=args.policy_id,
+            instruction_override=instruction,
+            # GR00T's per-request seed contract (``groot_core.parse_inference_seed``
+            # via ``backends/groot_policy.py``): the same policy_rng and chunk
+            # index must reproduce the same action chunk on replay.
+            inference_parameters={"seed": inference_seed},
+            actions_per_chunk=args.actions_per_chunk,
         )
-        actions = actions[: args.actions_per_chunk]
         recovery_suggestions: list[dict[str, Any]] = []
         if bundle and recovery_controller is not None:
             recovery_controller.activate(
@@ -346,7 +714,31 @@ def _run_with_environment(
         active_recovery = (
             recovery_controller.context() if recovery_controller is not None else None
         )
-        if role1_actor is not None and (last_proposals or active_recovery is not None):
+        # The call path is decided *before* inference, because the two paths
+        # differ in whether the environment is written by the same operation:
+        # ``policy_step`` is atomic and never exposes the chunk, so a chunk that
+        # Role1 may rewrite has to be inferred (``policy_infer``) and executed
+        # (``action_step``) separately.
+        role1_engaged = role1_actor is not None and bool(
+            last_proposals or active_recovery is not None
+        )
+        selected_tool: str | None = None
+        if not role1_engaged:
+            step = await environment.policy_step(policy_request)
+            vla_meta: dict[str, Any] = {
+                "source": "policy_step",
+                "inference_seed": inference_seed,
+                "actions_per_chunk": int(args.actions_per_chunk),
+                "model_version": dict(step.info).get("model_version"),
+                "policy_id": dict(step.info).get("policy_id"),
+            }
+            result = _chunk_result(step, vla=vla_meta)
+        else:
+            assert role1_actor is not None
+            actions, vla_meta = await environment.policy_infer(policy_request)
+            actions = actions[: args.actions_per_chunk]
+            vla_meta = {**vla_meta, "inference_seed": inference_seed}
+            observation = await environment.snapshot(include_images=True)
             try:
                 with _role1_inference_heartbeat(
                     output / "heartbeat.jsonl",
@@ -386,6 +778,7 @@ def _run_with_environment(
                 role1_contract_failure = True
                 break
             role1_decisions += len(reviewed.decision_ids)
+            selected_tool = reviewed.selected_tool
             _append_jsonl(
                 tools_path,
                 {
@@ -400,21 +793,22 @@ def _run_with_environment(
             if reviewed.terminate:
                 role1_terminated = True
                 break
-            actions = list(reviewed.actions)
-        result = environment.execute_chunk(
-            actions,
-            critic_rules=critic_rules,
-            interrupt_on_proposal=bool(critic_rules),
-            capture_event_images=True,
-            enable_task_program=enable_task_program,
-        )
+            step = await environment.action_step(list(reviewed.actions))
+            result = _chunk_result(
+                step,
+                vla={
+                    **vla_meta,
+                    "role1_reviewed": True,
+                    "role1_selected_tool": reviewed.selected_tool,
+                },
+            )
         chunks += 1
         actions_executed += int(result["executed_horizon"])
         new_proposals = list(result.get("critic_proposals", ()))
         if active_recovery is not None and recovery_controller is not None:
             _advance_recovery_after_chunk(
                 recovery_controller=recovery_controller,
-                selected_tool=reviewed.selected_tool,
+                selected_tool=selected_tool,
                 environment_step=actions_executed,
                 result=result,
                 tools_path=tools_path,
@@ -430,32 +824,32 @@ def _run_with_environment(
             chunks_path,
             {
                 "chunk_index": chunks - 1,
-                "vla": vla_meta,
+                "vla": result["vla"],
                 "environment": result,
             },
         )
-        for step in result.get("steps", ()):
-            if not isinstance(step, dict):
+        for step_record in result.get("steps", ()):
+            if not isinstance(step_record, dict):
                 raise ValueError("environment step record must be an object")
             _append_jsonl(
                 actions_path,
                 {
-                    "step_index": step.get("step_index"),
-                    "action": step.get("applied_action"),
-                    "action_sha256": step.get("action_sha256"),
+                    "step_index": step_record.get("step_index"),
+                    "action": step_record.get("applied_action"),
+                    "action_sha256": step_record.get("action_sha256"),
                 },
             )
             _append_jsonl(
                 states_path,
                 {
-                    "step_index": step.get("step_index"),
-                    "state": step.get("state", {}),
-                    "reward": step.get("reward"),
-                    "official_success": step.get("official_success"),
-                    "success_latched": step.get("success_latched"),
-                    "terminated": step.get("terminated"),
-                    "truncated": step.get("truncated"),
-                    "proposal_rule_ids": step.get("proposal_rule_ids", []),
+                    "step_index": step_record.get("step_index"),
+                    "state": step_record.get("state", {}),
+                    "reward": step_record.get("reward"),
+                    "official_success": step_record.get("official_success"),
+                    "success_latched": step_record.get("success_latched"),
+                    "terminated": step_record.get("terminated"),
+                    "truncated": step_record.get("truncated"),
+                    "proposal_rule_ids": step_record.get("proposal_rule_ids", []),
                 },
             )
         _append_jsonl(
@@ -497,8 +891,8 @@ def _run_with_environment(
             severity=1.0,
             artifact_paths=(str(chunks_path),),
         )
-    finalized = environment.finalize_episode()
-    released = environment.release()
+    finalized = await environment.finalize_episode()
+    released = await environment.close()
     record = EpisodeRecord(
         episode_id=episode_id,
         logical_id=args.logical_id,
@@ -527,10 +921,20 @@ def _run_with_environment(
             "safety_layer": getattr(args, "safety_layer", "interface_contract_v1"),
             "task_program_enabled": enable_task_program,
             "tool_runtime": tool_runtime_manifest,
-            "environment_release": {
-                "binding_released": released.get("binding_released") is True,
-                "released_generation": released.get("released_generation"),
+            # The rollout runtime replaces the old two-server deployment, so the
+            # audit trail records which shared runtime and which env pool served
+            # this episode instead of an env/VLA endpoint pair.
+            "rollout_runtime": {
+                "session_id": str(environment.session_id),
+                "env_spec_digest": env_spec_digest,
+                "policy_id": args.policy_id,
+                "reset_episode_id": (
+                    None
+                    if reset_step.episode_id is None
+                    else int(reset_step.episode_id)
+                ),
             },
+            "environment_release": released,
             "initial_observation_identity": initial_observation_identity,
             **_role1_artifact_index(output / "role1"),
         },
@@ -596,35 +1000,134 @@ def _run_with_environment(
     return record
 
 
-def run(args: argparse.Namespace) -> EpisodeRecord:
-    """Run one episode and release a known-good persistent slot on every exit."""
+def _env_spec(args: argparse.Namespace) -> EnvSpecMsg:
+    """Build the env spec that selects (or creates) this episode's env pool.
 
-    environment = RoboCasaEnvClient(args.env_endpoint, timeout_s=args.rpc_timeout_s)
+    Every field here enters ``EnvSpecMsg.digest()``, which is the pool key: all
+    rollout processes of one campaign must pass identical values or they will
+    each cold-start their own simulator pool. Per-episode values (seed, video
+    directory, Critic rules) deliberately do **not** live here — they ride in
+    ``ResetSpec.options``.
+
+    Args:
+        args: Parsed CLI arguments.
+
+    Returns:
+        The env spec for ``create_sessions``.
+    """
+    return EnvSpecMsg(
+        env_family="robocasa",
+        env_config={
+            "task": args.task,
+            "split": args.split,
+            "camera_size": args.camera_size,
+            "max_steps": args.env_max_steps,
+            "require_isolated_renderer": bool(args.require_isolated_renderer),
+            "process_isolation": bool(args.process_isolation),
+        },
+        pool_size=int(args.env_pool_size),
+        max_dynamic_pool_size=args.env_max_pool_size,
+        resource_hints={"accelerator": True},
+    )
+
+
+async def run(args: argparse.Namespace, *, client: Any | None = None) -> EpisodeRecord:
+    """Run one episode against the shared rollout runtime.
+
+    The session is always closed, which is what returns the env slot to the pool
+    for the next rollout process (the old ``release()`` semantics).
+
+    Args:
+        args: Parsed CLI arguments.
+        client: Injected ``RemoteRuntimeClient``-shaped object; tests pass an
+            ASGI-backed or fake client. When ``None`` this function owns the
+            client's connection pool and closes it on exit.
+
+    Returns:
+        The episode record.
+    """
+    owns_client = client is None
+    if client is None:
+        client = RemoteRuntimeClient(
+            args.runtime_url,
+            token=args.runtime_token,
+            operation_timeout_s=args.operation_timeout_s,
+            session_timeout_s=args.session_timeout_s,
+        )
+    environment: RolloutSession | None = None
     try:
-        return _run_with_environment(args, environment)
+        handle = _single(
+            await client.create_sessions(
+                [
+                    CreateSessionRequest(
+                        application_id=RUNTIME_APPLICATION_ID,
+                        client_session_key=(
+                            f"{args.logical_id}-attempt-{args.attempt_index}"
+                        ),
+                        env_spec=_env_spec(args),
+                        default_policy_id=args.policy_id,
+                        lease_seconds=float(args.session_lease_s),
+                        metadata={
+                            "task": args.task,
+                            "seed": int(args.seed),
+                            "generation": int(args.generation),
+                            "logical_id": args.logical_id,
+                        },
+                    )
+                ]
+            ),
+            operation="create_sessions",
+        )
+        environment = RolloutSession(
+            client,
+            handle.session_id,
+            lease_seconds=float(args.session_lease_s),
+            lease_expiration=float(handle.lease_expiration),
+        )
+        return await _run_with_session(
+            args, environment, env_spec_digest=handle.env_spec_digest
+        )
     finally:
-        if environment.episode_id is not None and not environment.outcome_unknown:
+        if environment is not None:
             cleanup_errors: list[str] = []
-            try:
-                environment.finalize_episode()
-            except Exception as exc:
-                cleanup_errors.append(type(exc).__name__)
-            if not environment.outcome_unknown:
+            if environment.episode_started and not environment.finalized:
                 try:
-                    environment.release()
+                    await environment.finalize_episode()
                 except Exception as exc:
                     cleanup_errors.append(type(exc).__name__)
+            if not environment.closed:
+                closed = await environment.close()
+                if closed.get("session_closed") is not True:
+                    cleanup_errors.append(str(closed.get("failure_class", "unknown")))
             if cleanup_errors:
                 _append_jsonl(
                     Path(args.output_dir) / "cleanup_errors.jsonl",
                     {"at": _now(), "failure_classes": cleanup_errors},
                 )
+        if owns_client:
+            await client.aclose()
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run one frozen RoboCasa rollout")
-    parser.add_argument("--env-endpoint", required=True)
-    parser.add_argument("--vla-endpoint", required=True)
+    parser.add_argument(
+        "--runtime-url",
+        required=True,
+        help=(
+            "Base URL of the shared rollout-runtime serve process "
+            "(RemoteRuntimeClient -> Gateway -> Ray workers)."
+        ),
+    )
+    parser.add_argument(
+        "--runtime-token",
+        default=os.environ.get("ZETTA_RUNTIME_TOKEN"),
+        help="Bearer token for the runtime; defaults to ZETTA_RUNTIME_TOKEN.",
+    )
+    parser.add_argument(
+        "--policy-id",
+        default="groot",
+        help="Policy id served by the runtime's RolloutWorker (preset: groot).",
+    )
     parser.add_argument("--task", required=True)
     parser.add_argument("--instruction", default=None)
     parser.add_argument("--split", default="target")
@@ -649,8 +1152,74 @@ def main() -> int:
     parser.add_argument("--result-file", required=True)
     parser.add_argument("--max-actions", type=int, default=1000)
     parser.add_argument("--actions-per-chunk", type=int, default=16)
-    parser.add_argument("--rpc-timeout-s", type=float, default=180.0)
-    parser.add_argument("--vla-timeout-s", type=float, default=120.0)
+    parser.add_argument(
+        "--camera-size",
+        type=int,
+        default=256,
+        help="Camera resolution; part of the env pool identity.",
+    )
+    parser.add_argument(
+        "--env-max-steps",
+        type=int,
+        default=1000,
+        help="RoboCasaSession step cap; part of the env pool identity.",
+    )
+    parser.add_argument(
+        "--require-isolated-renderer",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Require an isolated MuJoCo renderer; part of the env pool identity.",
+    )
+    parser.add_argument(
+        "--process-isolation",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "Run each env pool slot's RoboCasaSession in its own OS subprocess "
+            "(robots/robocasa/session_process.py) instead of this rank's shared "
+            "thread pool; part of the env pool identity. Only needed when "
+            "--env-pool-size > 1 on a single rank: runtime comparison test design "
+            "\u00a70.2 documents that multiple RoboCasaSession instances sharing one "
+            "GPU inside one process can race inside native robosuite/MuJoCo/EGL "
+            "calls during reset()/chunk_step(), nondeterministically producing "
+            "EGL_BAD_ACCESS crashes or full deadlocks. Leave this off (default) "
+            "for --env-pool-size=1, which has no cross-session contention and no "
+            "reason to pay subprocess IPC overhead."
+        ),
+    )
+    parser.add_argument(
+        "--env-pool-size",
+        type=int,
+        default=1,
+        help=(
+            "Initial env slots for this spec. Every rollout process in one "
+            "campaign must pass the same value: it enters the pool digest."
+        ),
+    )
+    parser.add_argument(
+        "--env-max-pool-size",
+        type=int,
+        default=None,
+        help="Upper bound for dynamic slot growth; defaults to --env-pool-size.",
+    )
+    parser.add_argument(
+        "--session-lease-s",
+        type=float,
+        default=1800.0,
+        help="Requested session lease; renewed automatically during the episode.",
+    )
+    parser.add_argument(
+        "--operation-timeout-s",
+        type=float,
+        default=900.0,
+        help="Read timeout for reset / policy_step / action_step / extension_call.",
+    )
+    parser.add_argument(
+        "--session-timeout-s",
+        type=float,
+        default=1800.0,
+        help="Read timeout for create_sessions (the runtime may cold-start a pool).",
+    )
     parser.add_argument(
         "--role1-planner",
         choices=("none", "api", "codex"),
@@ -660,7 +1229,7 @@ def main() -> int:
     parser.add_argument(
         "--reasoning-effort",
         choices=("low", "medium", "high", "xhigh"),
-        default=os.environ.get("RPENT_REASONING_EFFORT"),
+        default=os.environ.get("ZETTA_REASONING_EFFORT"),
     )
     parser.add_argument("--role1-max-tokens", type=int, default=4096)
     parser.add_argument("--role1-timeout-s", type=int, default=900)
@@ -675,7 +1244,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--harness-root",
-        default=os.environ.get("RPENT_ROBOCASA_HARNESS_ROOT"),
+        default=os.environ.get("ZETTA_ROBOCASA_HARNESS_ROOT"),
         help="Frozen harness snapshot root used by --tool-runtime harness.",
     )
     parser.add_argument(
@@ -685,7 +1254,7 @@ def main() -> int:
     )
     args = parser.parse_args()
     try:
-        record = run(args)
+        record = asyncio.run(run(args))
         return 0 if record.status == "valid" else 2
     except Exception as exc:
         output = Path(args.output_dir)

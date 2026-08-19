@@ -6,7 +6,7 @@ Run manually with::
         python -m robots.libero.sam3_server \
         --transport http --host 127.0.0.1 --port 8114
 
-RPent normally starts this process automatically. The service exposes a
+Zetta normally starts this process automatically. The service exposes a
 ``segment`` RPC method over either HTTP or socket transport.
 """
 
@@ -27,8 +27,8 @@ import numpy as np
 from PIL import Image
 from pydantic import BaseModel, Field, model_validator
 
-from rpent.utils.logging import get_logger
-from rpent.utils.rpc import RpcFacade
+from zetta.utils.logging import get_logger
+from zetta.utils.rpc import RpcFacade
 
 logger = get_logger("sam3_server")
 
@@ -98,7 +98,7 @@ class Sam3Engine:
             from sam3.model_builder import build_sam3_image_model
         except ImportError as exc:
             raise RuntimeError(
-                "local SAM3 dependencies are missing; install RPent with "
+                "local SAM3 dependencies are missing; install Zetta with "
                 '`pip install -e ".[sam3]"` (or `.[full]`)'
             ) from exc
 
@@ -319,7 +319,7 @@ class Sam3Facade(RpcFacade):
 
 
 def _build_argparser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="RPent local SAM 3.0 server")
+    parser = argparse.ArgumentParser(description="Zetta local SAM 3.0 server")
     parser.add_argument("--transport", choices=["socket", "http"], default="http")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8114)
@@ -351,7 +351,7 @@ def main() -> None:
     if not checkpoint:
         raise RuntimeError(
             "SAM3_CHECKPOINT_PATH is not set; export the path to sam3.pt "
-            "before starting RPent"
+            "before starting Zetta"
         )
     engine = Sam3Engine.load(checkpoint)
     facade = Sam3Facade(engine)

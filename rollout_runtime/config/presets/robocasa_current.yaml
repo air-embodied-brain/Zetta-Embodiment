@@ -1,0 +1,103 @@
+# RoboCasa-current 单机 preset（runtime v3 design §3.4，Stage 4 交付物）。
+#
+# 用途：单机跑通完整的 Gateway ↔ EnvWorker ↔ RolloutWorker 流程，env 后端是当前分支的
+# ``RoboCasaSession``（``rollout_runtime/backends/robocasa_current.py``），policy 后端
+# 是当前分支的 GR00T（``rollout_runtime/backends/groot_policy.py``）。
+#
+# 与 ``local_fake.yaml`` 的关键差别：
+#   1. env_worker.placement_strategy: packed（不是 node）——RoboCasaSession 渲染强制
+#      MUJOCO_GL=egl，真实需要一张卡（env_registry.py 的
+#      needs_accelerator_override=True），"node" 策略推断的 has_accelerator=False 会让
+#      EnvWorkerRegistry.serves() 直接拒绝调度到这个 rank（见 test_multi_family.py::
+#      test_gpu_batched_family_needs_a_rank_that_declares_an_accelerator 的同一条断言，
+#      只是那里测的是 maniskill）。
+#   2. rollout_worker.policy_backend: groot（不是 fake/rlinf）——policy_config 的
+#      groot_root/model_path 必须替换成本机真实路径才能跑通，本 preset 只提供占位符。
+#   3. env_config.task 必填，没有默认值（对应 RoboCasaSession 的 gymnasium.make 目标）。
+#
+# 单机单卡场景：num_ranks 都是 1，component_placement 留空（走 NodePlacementStrategy）。
+# 通用 8 卡 placement 见 ``robocasa_pi0_8gpu.yaml``。
+
+env_family: robocasa
+env_config:
+  task: SlideDishwasherRack
+  split: target
+  camera_size: 256
+  max_steps: 1000
+  require_isolated_renderer: true
+
+cluster:
+  num_nodes: 1
+  component_placement: {}
+
+gateway:
+  gateway_epoch: 1
+  maintenance_interval_seconds: 1.0
+  default_lease_seconds: 1800.0
+  error_retention_seconds: 300.0
+  result_ttl_seconds: 300.0
+  heartbeat_timeout_seconds: 60.0
+  heartbeat_interval_seconds: 10.0
+  max_concurrency_per_rank: 4
+  metrics_namespace: rr
+
+transport:
+  kind: ray_channel
+  command_queue_size: 64
+  control_queue_size: 16
+  result_queue_size: 64
+  infer_request_queue_size: 16
+  infer_response_queue_size: 16
+  command_timeout_seconds: 600.0
+
+env_worker:
+  group_name: env
+  num_ranks: 1
+  # RoboCasaSession 渲染需要 GPU（EGL），不能用 node 策略（见文件头注释第 1 点）。
+  placement_strategy: packed
+  max_sessions_per_rank: 1
+  default_pool_size: 1
+  seed_offset: 0
+
+rollout_worker:
+  group_name: rollout
+  num_ranks: 1
+  placement_strategy: packed
+  tensor_parallel_size: 1
+  pipeline_parallel_size: 1
+  policy_id: groot
+  policy_family: groot
+  policy_backend: groot
+  device: cuda
+  dtype: bfloat16
+  max_concurrent_inferences: 1
+  policy_config:
+    # 占位符：真实部署时替换成本机 GR00T 源码与 checkpoint 路径
+    # （对应 groot_server.py 的 --groot-root / --model-path CLI 参数）。
+    groot_root: /path/to/Isaac-GR00T
+    model_path: /path/to/checkpoints/GR00T-N1.5-RoboCasa
+    data_config_name: panda_omron
+    embodiment_tag: new_embodiment
+    denoising_steps: 4
+    maximum_pending: 1
+  scheduler:
+    # GR00T 单进程串行推理（groot_core.py 的 threading.Lock），单请求没有可合的批。
+    max_batch_size: 1
+    max_wait_ms: 0.0
+    max_queue_depth: 16
+    max_inflight_per_application: 4
+    max_inflight_per_session: 1
+    fixed_batch_size: null
+
+admission:
+  require_auth: false
+  tokens: {}
+  max_sessions_per_application: 4
+  max_inflight_operations_per_application: 8
+  max_inflight_operations_per_session: 2
+  max_total_inflight_operations: 16
+
+payload:
+  inline_threshold_bytes: 262144
+  request_limit_bytes: 8388608
+  image_codec: png

@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from rpent.memory.task_memory import TaskMemoryStore
+from zetta.memory.task_memory import TaskMemoryStore
 from scripts.experiments.run_sequential_memory import (
     _seed_for_step,
     _validate_manifest,

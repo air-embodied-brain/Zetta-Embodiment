@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 from __future__ import annotations
 
 import argparse
@@ -39,8 +39,8 @@ from robots.robocasa.role1_agent import (
     Role1Event,
     ToolProposal,
 )
-from rpent.evolution.jsonio import canonical_sha256, read_json
-from rpent.utils.rpc import RpcError
+from zetta.evolution.jsonio import canonical_sha256, read_json
+from zetta.utils.rpc import RpcError
 from scripts.evolution.prepare_libero_campaign import (
     _load_task_contract,
     prepare,

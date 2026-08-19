@@ -1,4 +1,4 @@
-# Copyright (c) 2026 RPent Contributors
+# Copyright (c) 2026 Zetta Contributors
 """Canonical RoboCasa action contract used by proposal tools.
 
 The public RoboCasa Gym wrapper consumes a mapping of named action arrays.  A

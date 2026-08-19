@@ -52,10 +52,10 @@ experiment_root=${EXPERIMENT_ROOT:-}
 campaign_root=${EXPERIMENT_CAMPAIGN_ROOT:-${experiment_root}/campaign}
 queue_root=${EXPERIMENT_QUEUE_ROOT:-${experiment_root}/queue}
 runtime_root=${EXPERIMENT_RUNTIME_ROOT:-${experiment_root}/runtime}
-service_root=${RPENT_SERVICE_ROOT:-${runtime_root}/services}
+service_root=${ZETTA_SERVICE_ROOT:-${runtime_root}/services}
 state_root=${service_root}/state
 log_root=${service_root}/logs
-provider_file=${PROVIDER_ENV_FILE:-${RPENT_PROVIDER_ENV_FILE:-}}
+provider_file=${PROVIDER_ENV_FILE:-${ZETTA_PROVIDER_ENV_FILE:-}}
 broker_client_file=${state_root}/broker-client.env
 worker_host=${WORKER_HOST:-local-${family}}
 common_python=${EXPERIMENT_PYTHON:-python3}
@@ -113,12 +113,12 @@ load_provider() {
   set +a
   export NO_PROXY="${loopback_no_proxy}${NO_PROXY:+,${NO_PROXY}}"
   export no_proxy="${loopback_no_proxy}${no_proxy:+,${no_proxy}}"
-  need_var RPENT_API_PROVIDERS
+  need_var ZETTA_API_PROVIDERS
   if [[ "${START_PROVIDER:-1}" == 1 ]]; then
-    need_var RPENT_API_PROVIDER_BROKER_API_KEY
+    need_var ZETTA_API_PROVIDER_BROKER_API_KEY
   fi
-  broker_api_key=${RPENT_API_PROVIDER_BROKER_API_KEY:-}
-  export RPENT_PROVIDER_ENV_FILE="$provider_file"
+  broker_api_key=${ZETTA_API_PROVIDER_BROKER_API_KEY:-}
+  export ZETTA_PROVIDER_ENV_FILE="$provider_file"
 }
 
 validate_common() {
@@ -149,7 +149,7 @@ validate_common() {
   need_command sha256sum
   [[ -z "$(git -C "$repo_root" status --porcelain)" || "${EXPERIMENT_ALLOW_DIRTY:-0}" == 1 ]] ||
     die "repository is dirty; set EXPERIMENT_ALLOW_DIRTY=1 only for exploratory runs"
-  python_has "$common_python" "$family_pythonpath" numpy omegaconf pydantic rpent
+  python_has "$common_python" "$family_pythonpath" numpy omegaconf pydantic zetta
   python_has "$common_python" "${EXPERIMENT_PYTHONPATH:-}" openai_codex
   load_provider
   provider_python=$(resolve_python "${PROVIDER_PYTHON:-$common_python}")
@@ -167,8 +167,8 @@ validate_libero() {
   need_path "$LIBERO_VLA_MODEL_PATH"
   libero_python=$(resolve_python "${LIBERO_PYTHON:-$common_python}")
   libero_vla_python=$(resolve_python "${LIBERO_VLA_PYTHON:-$libero_python}")
-  python_has "$libero_python" "${LIBERO_PYTHONPATH:-}" torch rlinf liberopro.liberopro
-  python_has "$libero_vla_python" "${LIBERO_VLA_PYTHONPATH:-${LIBERO_PYTHONPATH:-}}" torch rlinf
+  python_has "$libero_python" "${LIBERO_PYTHONPATH:-}" torch zetta liberopro.liberopro
+  python_has "$libero_vla_python" "${LIBERO_VLA_PYTHONPATH:-${LIBERO_PYTHONPATH:-}}" torch openpi zetta.policies.openpi
 }
 
 validate_robocasa() {
@@ -215,7 +215,7 @@ pid_is_owned() {
   local name=$1 pid_file=${state_root}/$1.pid pid expected
   pid_is_alive "$pid_file" || return 1
   pid=$(<"$pid_file")
-  expected="RPENT_EXPERIMENT_SERVICE=${service_root}/${name}"
+  expected="ZETTA_EXPERIMENT_SERVICE=${service_root}/${name}"
   [[ -r "/proc/${pid}/environ" ]] &&
     tr '\0' '\n' <"/proc/${pid}/environ" | grep -Fqx "$expected"
 }
@@ -272,7 +272,7 @@ start_background() {
   fi
   rm -f "$pid_file"
   mkdir -p "$state_root" "$log_root"
-  nohup setsid env "RPENT_EXPERIMENT_SERVICE=${service_root}/${name}" \
+  nohup setsid env "ZETTA_EXPERIMENT_SERVICE=${service_root}/${name}" \
     "$@" >"$log_file" 2>&1 &
   pid=$!
   printf '%s\n' "$pid" >"$pid_file"
@@ -329,8 +329,8 @@ wait_process_stable() {
 
 start_provider() {
   [[ "${START_PROVIDER:-1}" == 1 ]] || return 0
-  local port=${RPENT_API_PROVIDER_BROKER_PORT:-4110}
-  export RPENT_API_PROVIDER_BROKER_URL="http://127.0.0.1:${port}"
+  local port=${ZETTA_API_PROVIDER_BROKER_PORT:-4110}
+  export ZETTA_API_PROVIDER_BROKER_URL="http://127.0.0.1:${port}"
   ensure_port_available provider 127.0.0.1 "$port"
   start_background provider "$provider_python" \
     "$repo_root/scripts/evolution/serve_provider_broker.py" --host 127.0.0.1 --port "$port"
@@ -342,15 +342,15 @@ write_broker_client_env() {
   local sanitized_provider_json
   sanitized_provider_json=$("$common_python" - <<'PY'
 import os
-from rpent.planner.provider_pool import sanitize_provider_config_for_broker_client
+from zetta.planner.provider_pool import sanitize_provider_config_for_broker_client
 
-print(sanitize_provider_config_for_broker_client(os.environ["RPENT_API_PROVIDERS"]))
+print(sanitize_provider_config_for_broker_client(os.environ["ZETTA_API_PROVIDERS"]))
 PY
 )
   {
-    printf 'export RPENT_API_PROVIDER_BROKER_URL=%q\n' "${RPENT_API_PROVIDER_BROKER_URL:-}"
-    printf 'export RPENT_API_PROVIDER_BROKER_API_KEY=%q\n' "$broker_api_key"
-    printf 'export RPENT_API_PROVIDERS=%q\n' "$sanitized_provider_json"
+    printf 'export ZETTA_API_PROVIDER_BROKER_URL=%q\n' "${ZETTA_API_PROVIDER_BROKER_URL:-}"
+    printf 'export ZETTA_API_PROVIDER_BROKER_API_KEY=%q\n' "$broker_api_key"
+    printf 'export ZETTA_API_PROVIDERS=%q\n' "$sanitized_provider_json"
   } >"$broker_client_file"
   chmod 600 "$broker_client_file"
 }
@@ -498,7 +498,7 @@ clear_upstream_provider_secrets() {
 import json
 import os
 
-value = json.loads(os.environ["RPENT_API_PROVIDERS"])
+value = json.loads(os.environ["ZETTA_API_PROVIDERS"])
 routes = value.get("providers", []) if isinstance(value, dict) else value
 for route in routes:
     name = route.get("api_key_env")
@@ -506,7 +506,7 @@ for route in routes:
         print(name)
 PY
 )
-  unset RPENT_API_PROVIDERS RPENT_API_PROVIDER_BROKER_API_KEY
+  unset ZETTA_API_PROVIDERS ZETTA_API_PROVIDER_BROKER_API_KEY
 }
 
 run_libero_smoke() {
@@ -594,9 +594,9 @@ start_worker() {
   [[ "${START_WORKER:-1}" == 1 ]] || return 0
   local -a command
   if [[ "$family" == libero ]]; then
-    command=("$common_python" -m rpent.evolution.cli worker --queue-root "$queue_root" --host "$worker_host" --poll-s "${WORKER_POLL_S:-2}" --concurrency "${WORKER_CONCURRENCY:-1}")
+    command=("$common_python" -m zetta.evolution.cli worker --queue-root "$queue_root" --host "$worker_host" --poll-s "${WORKER_POLL_S:-2}" --concurrency "${WORKER_CONCURRENCY:-1}")
   else
-    command=("$common_python" -m rpent.evolution.cli worker --queue-root "$queue_root" --host "$worker_host" --poll-s "${WORKER_POLL_S:-2}" --concurrency "${WORKER_CONCURRENCY:-1}" --slot-broker-root "$slot_broker_root" --environment-ready-manifest "$ready_manifest" --maximum-active-environment-slots "${ROBOCASA_SLOTS:-1}")
+    command=("$common_python" -m zetta.evolution.cli worker --queue-root "$queue_root" --host "$worker_host" --poll-s "${WORKER_POLL_S:-2}" --concurrency "${WORKER_CONCURRENCY:-1}" --slot-broker-root "$slot_broker_root" --environment-ready-manifest "$ready_manifest" --maximum-active-environment-slots "${ROBOCASA_SLOTS:-1}")
   fi
   start_background worker bash -c 'set -a; source "$1"; source "$2"; set +a; export NO_PROXY="127.0.0.1,localhost,::1${NO_PROXY:+,$NO_PROXY}"; export no_proxy="127.0.0.1,localhost,::1${no_proxy:+,$no_proxy}"; shift 2; exec "$@"' \
     bash "$config_file" "$broker_client_file" "${command[@]}"
@@ -754,7 +754,7 @@ fi
 
 if [[ "$family" == libero ]]; then
   export LIBERO_ASSETS_ROOT_OVERRIDE=$LIBERO_ASSETS_ROOT
-  export RPENT_LIBERO_GPU=${LIBERO_ENVIRONMENT_GPUS%%,*}
+  export ZETTA_LIBERO_GPU=${LIBERO_ENVIRONMENT_GPUS%%,*}
   export PYTHONPATH="${repo_root}${LIBERO_PYTHONPATH:+:${LIBERO_PYTHONPATH}}${EXPERIMENT_PYTHONPATH:+:${EXPERIMENT_PYTHONPATH}}${PYTHONPATH:+:${PYTHONPATH}}"
 else
   export PYTHONPATH="${repo_root}${ROBOCASA_PYTHONPATH:+:${ROBOCASA_PYTHONPATH}}${EXPERIMENT_PYTHONPATH:+:${EXPERIMENT_PYTHONPATH}}${PYTHONPATH:+:${PYTHONPATH}}"
