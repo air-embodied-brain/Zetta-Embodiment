@@ -28,6 +28,54 @@
 #   robocasa:   mujoco==3.3.1 + robosuite==1.5.2 + robocasa==1.0.1
 #               + gr00t==1.1.0 + flash-attn==2.8.3
 #
+# ROBOCASA_SRC_ROOT compatibility matrix (robocasa track only):
+#
+#   robosuite/, robocasa/, and Isaac-GR00T/ under ROBOCASA_SRC_ROOT are installed
+#   editable straight from source (see step 3/9, 3.1/9, 5/9 below) -- none of the
+#   three publish to PyPI for this track, and nothing in this script told you which
+#   commit/branch of each repo produces the versions pinned above (the "robosuite
+#   is not 1.5.x" / "robocasa's kitchen.py needs PandaOmron" checks below only
+#   catch the mismatch after checkout + install + pip's dependency resolution has
+#   already run, i.e. late). Check out exactly these refs instead of "main":
+#
+#     robosuite/    https://github.com/ARISE-Initiative/robosuite
+#                   tag v1.5.2 (824ac14cefcfb7ec125fe5eb2e0bad7364466154) -> robosuite==1.5.2
+#     robocasa/     https://github.com/robocasa/robocasa
+#                   commit 29f7ce8814c1547f5af762a0997fbd4b64848dd7 -> robocasa==1.0.1
+#     Isaac-GR00T/  https://github.com/NVIDIA/Isaac-GR00T
+#                   tag n1.5-release (4af2b622892f7dcb5aae5a3fb70bcb02dc217b96) -> gr00t==1.1.0
+#
+#   e.g.:
+#     git clone https://github.com/ARISE-Initiative/robosuite "$ROBOCASA_SRC_ROOT/robosuite" \
+#       && git -C "$ROBOCASA_SRC_ROOT/robosuite" checkout v1.5.2
+#     git clone https://github.com/robocasa/robocasa "$ROBOCASA_SRC_ROOT/robocasa" \
+#       && git -C "$ROBOCASA_SRC_ROOT/robocasa" checkout 29f7ce8814c1547f5af762a0997fbd4b64848dd7
+#     git clone https://github.com/NVIDIA/Isaac-GR00T "$ROBOCASA_SRC_ROOT/Isaac-GR00T" \
+#       && git -C "$ROBOCASA_SRC_ROOT/Isaac-GR00T" checkout n1.5-release
+#
+#   Notes on how these three refs were picked (each repo versions differently,
+#   and none of it is obvious from a fresh checkout):
+#     - robosuite tags its releases 1:1 with the PyPI-style version string, so
+#       v1.5.2 is unambiguous.
+#     - robocasa has no v1.0.1 tag -- only v1.0 (== 1.0.0) and v0.2 exist. The
+#       commit above is the earliest one on its main branch whose setup.py
+#       already reads version="1.0.1"; anything from that commit onward
+#       reports the same version.
+#     - Isaac-GR00T's release tags do NOT correlate with the version string in
+#       pyproject.toml (n1.6-release and n1.7-release both report 0.1.0);
+#       n1.5-release is the only tag whose pyproject.toml reports 1.1.0. As a
+#       cross-check, n1.5-release's own pyproject.toml independently pins
+#       pydantic==2.10.6 and transformers==4.51.3 -- exactly the versions
+#       steps 5.3/9 and 5.4/9 below force-reinstall after GR00T's own install
+#       runs. If you check out a different Isaac-GR00T ref and that agreement
+#       breaks, treat it as a signal you have the wrong commit, not as this
+#       script being wrong.
+#   These refs were resolved by matching each project's own reported version
+#   string against its GitHub tag/commit history, not by re-running this exact
+#   three-repo combination through this script end to end -- if you hit a new
+#   failure with the exact refs above, it is real, not "just try a different
+#   commit."
+#
 # Usage:
 #   REPO_ROOT=/abs/path/to/Zetta-Embodiment \
 #   VENV_ROOT=/abs/path/to/venvs/vla-env \
@@ -55,7 +103,10 @@
 #                         assets have already been prepared elsewhere)
 #   ROBOCASA_SRC_ROOT     Required for the robocasa track: root of a source checkout
 #                         containing the robocasa/, robosuite/, and Isaac-GR00T/
-#                         subdirectories (each is an editable installation source)
+#                         subdirectories (each is an editable installation source).
+#                         See the "ROBOCASA_SRC_ROOT compatibility matrix" section
+#                         above for the exact git ref each subdirectory must be
+#                         checked out to.
 #   FLASH_ATTN_WHEEL      Optional for the robocasa track: local path or URL of a
 #                         prebuilt flash-attn wheel. By default, the version table below
 #                         is used to construct a GitHub Release URL. Set this explicitly
@@ -181,7 +232,9 @@ else
     *)
       echo "Warning: robosuite==$INSTALLED_ROBOSUITE is not in the 1.5.x series. robocasa's" \
            "kitchen.py requires robosuite.models.robots.PandaOmron (introduced in 1.5.x)," \
-           "so environment creation will fail." >&2
+           "so environment creation will fail. See the ROBOCASA_SRC_ROOT compatibility" \
+           "matrix near the top of this script for the exact git ref to check out" \
+           "(ROBOCASA_SRC_ROOT/robosuite must be at tag v1.5.2, not main)." >&2
       exit 1
       ;;
   esac
