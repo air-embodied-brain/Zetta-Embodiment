@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zetta Contributors
 """Runtime configuration schema.
 
 Dataclass schema + omegaconf loading. ``omegaconf`` is imported lazily, only
@@ -188,7 +189,8 @@ class RolloutWorkerConfig:
         policy_id: The default policy identifier.
         policy_family: The policy family, which decides the allowed
             mixed-batching parameter set.
-        policy_backend: ``"fake"`` or ``"rlinf"`` (for openpi / pi0.5).
+        policy_backend: ``"fake"``, ``"zetta_openpi"``, ``"groot"``, or
+            ``"cosmos_lite"``.
             Both launchers read this via ``backends.build_policy_core``.
         policy_config: Backend-private policy configuration (for the
             ``rlinf`` backend, these are ``RlinfPolicyConfig``'s fields:
@@ -362,3 +364,24 @@ def _validate(config: RuntimeConfig) -> None:
             f"timeout={timeout}): a single missed probe would otherwise be enough to "
             "declare a live rank lost, and LOST sessions are not recoverable"
         )
+    rollout = config.rollout_worker
+    if rollout.policy_backend == "cosmos_lite":
+        if rollout.policy_family != "cosmos_lite":
+            raise ValueError(
+                "cosmos_lite backend requires rollout_worker.policy_family="
+                "'cosmos_lite'"
+            )
+        if rollout.num_ranks != 1:
+            raise ValueError("initial cosmos_lite backend requires num_ranks=1")
+        if rollout.max_concurrent_inferences != 1:
+            raise ValueError(
+                "initial cosmos_lite backend requires max_concurrent_inferences=1"
+            )
+        if rollout.scheduler.max_batch_size != 1:
+            raise ValueError(
+                "initial cosmos_lite backend requires scheduler.max_batch_size=1"
+            )
+        if rollout.scheduler.max_wait_ms != 0:
+            raise ValueError(
+                "initial cosmos_lite backend requires scheduler.max_wait_ms=0"
+            )

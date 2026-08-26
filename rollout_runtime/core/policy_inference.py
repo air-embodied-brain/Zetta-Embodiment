@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zetta Contributors
 """Inference-core interface, batching-compatibility keys, and the
 mixable-parameter allowlist.
 
@@ -67,6 +68,9 @@ BATCHABLE_PARAM_KEYS: dict[str, frozenset[str]] = {
     "openpi_pytorch": frozenset({"noise_seed"}),
     "pi0": frozenset({"noise_seed"}),
     "pi05": frozenset({"noise_seed"}),
+    # Cosmos-Lite v0.3.0 is a batch-one remote server. Sampling parameters
+    # are fixed by its deployment YAML and checked by the backend.
+    "cosmos_lite": frozenset(),
     "fake": frozenset(),
 }
 """Per-policy-family declarations of "mixable" parameter keys: requests

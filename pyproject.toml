@@ -67,6 +67,9 @@ ray = [
 openpi = [
     "rlinf-openpi",
 ]
+cosmos-lite = [
+    "websockets>=11,<17",
+]
 libero = []
 # Simulator distributions are intentionally not declared here: liberopro and
 # liberoplus publish transitive dependencies on the main RLinf framework. The
@@ -75,7 +78,7 @@ libero = []
 libero-pro = []
 libero-plus = []
 full = [
-    "zetta[ray,openpi,libero-pro,sam3]",
+    "zetta[ray,openpi,libero-pro,sam3,cosmos-lite]",
 ]
 sam3 = [
     "sam3==0.1.4",
