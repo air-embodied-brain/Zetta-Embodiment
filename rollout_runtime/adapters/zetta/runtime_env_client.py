@@ -25,13 +25,11 @@ Not covered (raise ``NotImplementedError`` with a clear message instead of
 silently returning a wrong shape):
 
 - ``audit_trace``: no ``libero.audit_trace`` extension is registered by
-  ``rollout_runtime/core/env_registry.py::LIBERO_EXTENSIONS``. The legacy
-  per-step audit ledger (``actions.jsonl``/``states.jsonl``) is instead
-  reconstructed by the caller directly from each ``StepResult.per_step``
-  record (see ``_run_with_runtime`` in ``run_evolution_rollout.py``), which
-  carries the same information; there is nothing left for a separate
-  ``audit_trace`` call to add once every step already flows through
-  ``action_step``/``policy_step``.
+  ``rollout_runtime/core/env_registry.py::LIBERO_EXTENSIONS``, so there is no
+  server-side ledger to read back. ``step``/``chunk_step`` instead accumulate
+  one raw record per physical step (``_record_steps``), which
+  ``robots/libero/run_evolution_rollout.py::flush_audit_trace`` drains through
+  ``drain_step_records`` to write ``actions.jsonl``/``states.jsonl``.
 """
 
 from __future__ import annotations
@@ -136,6 +134,7 @@ class LiberoRuntimeEnvClient:
         *,
         loop: SyncRuntimeLoop,
         return_all_frames: bool = False,
+        sample_privileged_state: bool = False,
     ) -> None:
         """Wrap an already-created Runtime session.
 
@@ -150,15 +149,21 @@ class LiberoRuntimeEnvClient:
                 ``LiberoRuntimeVLAClient`` sharing this session.
             return_all_frames: Default for ``chunk_step``'s per-step frames,
                 matching the legacy client's constructor argument.
+            sample_privileged_state: Read ``libero.critic_state`` once per
+                ``step``/``chunk_step`` so the audit ledger carries the
+                ``privileged.*`` plane. Costs one extra ``extension_call`` per
+                chunk, so it defaults to off and callers opt in.
         """
         self._client = client
         self._loop = loop
         self.session_id = session_id
         self.return_all_frames = return_all_frames
+        self.sample_privileged_state = sample_privileged_state
         self.episode_terminated = False
         self.episode_truncated = False
         self.episode_steps = 0
         self._task_language: str | None = None
+        self._step_records: list[dict[str, Any]] = []
 
     @property
     def _ids(self) -> list[SessionId]:
@@ -212,6 +217,7 @@ class LiberoRuntimeEnvClient:
         self.episode_terminated = False
         self.episode_truncated = False
         self.episode_steps = 0
+        self._step_records.clear()
         obs = self._decode_observation(step)
         return obs, dict(step.info)
 
@@ -240,6 +246,93 @@ class LiberoRuntimeEnvClient:
             obs["extra_view_images"] = decode_payload(observation.extra_view_images[0])
         return obs
 
+    def _record_steps(self, step: StepResult, block: np.ndarray, executed: int) -> None:
+        """Accumulate one raw per-physical-step record for the audit ledger.
+
+        Deliberately raw -- action, state vector and terminal flags, but no
+        feature extraction and no hashing. Those live in the caller, because
+        the layering guard (``tests/runtime/test_layering.py`` rule 1) forbids
+        importing ``zetta``/``robots`` from here.
+
+        ``step_index`` comes from ``PerStepRecord`` when the family sends
+        per-step records and is otherwise reconstructed from ``episode_steps``;
+        both are 1-based, matching ``env_server.py:262``.
+
+        With ``sample_privileged_state``, ``libero.critic_state`` is read once
+        and attached to this call's last record. That read is safe mid-episode:
+        the external ``extension_call`` path leaves
+        ``slot.critic_history_pending_reset`` alone, so it cannot disturb the
+        next automatic Critic decision.
+
+        Args:
+            step: The ``action_step`` result being recorded.
+            block: The action block that was submitted, in submission order.
+            executed: Number of physical steps actually executed.
+        """
+
+        before = len(self._step_records)
+        per_step = step.per_step or ()
+        fallback_state = (
+            step.observation.state if step.observation is not None else None
+        )
+        if per_step:
+            for action, record in zip(block, per_step, strict=False):
+                state = (
+                    record.observation.state
+                    if record.observation is not None
+                    else fallback_state
+                )
+                self._step_records.append(
+                    {
+                        "step_index": int(record.step_index),
+                        "action": np.asarray(action, dtype=np.float64).tolist(),
+                        "states": None if state is None else list(state),
+                        "reward": float(record.reward),
+                        "terminated": bool(record.terminated),
+                        "truncated": bool(record.truncated),
+                        "proposal_rule_ids": list(
+                            record.info.get("critic_proposal_rule_ids", ())
+                        ),
+                    }
+                )
+        else:
+            first_index = self.episode_steps - executed + 1
+            for offset, action in enumerate(np.asarray(block)[:executed]):
+                last = offset == executed - 1
+                self._step_records.append(
+                    {
+                        "step_index": first_index + offset,
+                        "action": np.asarray(action, dtype=np.float64).tolist(),
+                        "states": (
+                            None if fallback_state is None else list(fallback_state)
+                        ),
+                        "reward": float(step.reward) if last else 0.0,
+                        "terminated": bool(step.terminated) if last else False,
+                        "truncated": bool(step.truncated) if last else False,
+                        "proposal_rule_ids": [],
+                    }
+                )
+        appended = self._step_records[before:]
+        if not appended:
+            return
+        for record in appended:
+            record["privileged_state"] = None
+        if self.sample_privileged_state:
+            appended[-1]["privileged_state"] = self.privileged_critic_state(
+                reset_tracker=False
+            )
+
+    def drain_step_records(self) -> list[dict[str, Any]]:
+        """Return the accumulated per-step records and clear the buffer.
+
+        Drain rather than ``since_step`` filtering: the only consumer appends
+        every record it is handed and never re-reads an earlier one.
+        """
+
+        records = self._step_records
+        self._step_records = []
+        return records
+
     def step(self, action: Any) -> tuple[dict[str, Any], float, Any, Any, Any]:
         """Execute one physical action (legacy 5-tuple: obs, reward, term, trunc, info)."""
 
@@ -252,6 +345,7 @@ class LiberoRuntimeEnvClient:
         )
         self.check_done(step.terminated, step.truncated)
         self.episode_steps += 1
+        self._record_steps(step, block, 1)
         obs = self._decode_observation(step)
         return obs, float(step.reward), step.terminated, step.truncated, dict(step.info)
 
@@ -285,6 +379,7 @@ class LiberoRuntimeEnvClient:
         self.check_done(step.terminated, step.truncated)
         executed_horizon = int(step.executed_horizon)
         self.episode_steps += executed_horizon
+        self._record_steps(step, block, executed_horizon)
         info = dict(step.info)
         per_step = step.per_step or ()
         terminated = np.asarray(

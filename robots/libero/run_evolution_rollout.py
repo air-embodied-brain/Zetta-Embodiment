@@ -15,7 +15,7 @@ import threading
 import time
 import traceback
 import uuid
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator, Mapping
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -97,6 +97,80 @@ def _append_jsonl(path: Path, value: dict[str, Any]) -> None:
         stream.write(json.dumps(value, ensure_ascii=False, default=str) + "\n")
         stream.flush()
         os.fsync(stream.fileno())
+
+
+def runtime_ledger_rows(
+    records: Iterable[Mapping[str, Any]],
+    *,
+    previous_eef: np.ndarray | None,
+) -> Iterator[tuple[dict[str, Any], dict[str, Any], np.ndarray | None]]:
+    """Map raw Runtime per-step records into audit-ledger rows.
+
+    The ``--runtime-url`` counterpart to ``env_server.py:318-331``: the Runtime
+    has no ``libero.audit_trace`` extension, so ``LiberoRuntimeEnvClient``
+    accumulates raw dicts and the rows are built here, with the same
+    ``extract_libero_critic_features``/``canonical_sha256`` used for the reset
+    row. The emitted key set matches the direct-connect branch field for field,
+    ``libero_terminated`` included.
+
+    Args:
+        records: Raw records from ``LiberoRuntimeEnvClient.drain_step_records``.
+        previous_eef: Realized-displacement anchor for the first record; seeded
+            from the reset observation to match ``env_server.py:229``.
+
+    Yields:
+        ``(actions_row, states_row, next_eef)`` per record, in order. Feed
+        ``next_eef`` back in as ``previous_eef`` to chain across flush calls.
+
+    Raises:
+        RuntimeError: A record carries no observation state. Skipping it would
+            break the one-row-per-physical-step invariant consumers rely on.
+    """
+
+    eef = previous_eef
+    for record in records:
+        states = record.get("states")
+        if states is None:
+            raise RuntimeError(
+                "runtime step record carries no observation state at step "
+                f"{record.get('step_index')}; cannot build an audit row"
+            )
+        step_index = int(record["step_index"])
+        reward = float(record["reward"])
+        terminated = bool(record["terminated"])
+        truncated = bool(record["truncated"])
+        action_value = list(record["action"])
+        features = extract_libero_critic_features(
+            {"states": states},
+            step_index=step_index,
+            reward=reward,
+            terminated=terminated,
+            truncated=truncated,
+            privileged_state=record.get("privileged_state"),
+            action=action_value,
+            previous_eef=eef,
+        )
+        action_sha256 = canonical_sha256(action_value)
+        eef = np.asarray(states, dtype=np.float64).reshape(-1)[:3].copy()
+        yield (
+            {
+                "step_index": step_index,
+                "action": action_value,
+                "action_sha256": action_sha256,
+            },
+            {
+                "step_index": step_index,
+                "action": action_value,
+                "action_sha256": action_sha256,
+                "state": features,
+                "observation_sha256": canonical_sha256(features),
+                "reward": reward,
+                "libero_terminated": terminated,
+                "truncated": truncated,
+                "proposal_rule_ids": list(record.get("proposal_rule_ids", ())),
+            },
+            eef,
+        )
 
 
 def _normalize_endpoint(value: str) -> str:
@@ -346,17 +420,26 @@ def _run(args: argparse.Namespace) -> EpisodeRecord:
     role1_decisions = 0
     chunks = 0
     last_audit_step = 0
+    last_eef: np.ndarray | None = None
 
     def flush_audit_trace() -> None:
-        nonlocal last_audit_step
-        if env is None or not hasattr(env, "audit_trace"):
+        nonlocal last_audit_step, last_eef
+        if env is None:
+            return
+        if not hasattr(env, "audit_trace"):
             # The Runtime path (``--runtime-url``) has no ``libero.audit_trace``
-            # extension: every step already flows through ``action_step``, so
-            # ``actions.jsonl``/``states.jsonl`` are appended directly at each
-            # ``chunk_step``/``step`` call site below instead of being
-            # reconstructed from a separate audit ledger read. See
-            # ``rollout_runtime/adapters/zetta/runtime_env_client.py``'s module
-            # docstring for why this extension does not exist server-side.
+            # extension, so rows are rebuilt from the client's accumulated
+            # per-step records instead. ``audit_trace`` is tested first so an
+            # env that has it can never be diverted onto this newer path.
+            if not hasattr(env, "drain_step_records"):
+                return
+            for action_row, state_row, next_eef in runtime_ledger_rows(
+                env.drain_step_records(), previous_eef=last_eef
+            ):
+                _append_jsonl(actions_path, action_row)
+                _append_jsonl(states_path, state_row)
+                last_eef = next_eef
+                last_audit_step = max(last_audit_step, int(state_row["step_index"]))
             return
         for row in env.audit_trace(since_step=last_audit_step):
             _append_jsonl(
@@ -434,6 +517,7 @@ def _run(args: argparse.Namespace) -> EpisodeRecord:
                 runtime_session_id,
                 loop=runtime_loop,
                 return_all_frames=True,
+                sample_privileged_state=True,
             )
             model = LiberoRuntimeVLAClient(
                 runtime_client,
@@ -471,6 +555,8 @@ def _run(args: argparse.Namespace) -> EpisodeRecord:
         primitives.set_obs(obs)
         primitives.configure_policy_rng(args.policy_rng)
         primitives.configure_critic(critic_rules)
+        reset_states = np.asarray(obs["states"], dtype=np.float64).reshape(-1)
+        last_eef = reset_states[:3].copy() if reset_states.size >= 3 else None
         task_language = _require_expected_task_language(
             env.get_task_language(), getattr(args, "expected_task_language", None)
         )
