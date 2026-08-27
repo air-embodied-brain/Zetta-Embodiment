@@ -1,0 +1,93 @@
+{
+  "bundle": {
+    "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "model_family": "cosmos3_policy",
+    "path": "/data/cosmos_lite/quantized_bundle",
+    "strategy": "gen_branch_w8a8"
+  },
+  "created_at": "2026-08-25T00:00:00+00:00",
+  "effective": {
+    "model": {
+      "artifact": "quantized_bundle",
+      "bundle_dir": "/data/cosmos_lite/quantized_bundle",
+      "checkpoint_path": null,
+      "family": "cosmos3_policy",
+      "strategy": "gen_branch_w8a8"
+    },
+    "profile": "cosmos_lite_quantized_4090",
+    "runtime": {
+      "attention_backend": "sage_attention",
+      "backend_policy": "strict",
+      "condition_kv_cache": true,
+      "fp8_gemm_backend": "triton_sm89",
+      "fp8_projection_fusion": "shared",
+      "torch_compile": true
+    },
+    "sampling": {
+      "denoise_steps": 2,
+      "deterministic_seed": true,
+      "guidance": 3.0,
+      "seed": 0,
+      "shift": 5.0
+    },
+    "schema_version": 1,
+    "server": {
+      "format_prompt_as_json": false,
+      "host": "127.0.0.1",
+      "output_dir": "/data/cosmos_lite/runs/test",
+      "port": 8000,
+      "profile_jsonl": null
+    }
+  },
+  "fallback_decisions": [],
+  "model": {
+    "artifact": "quantized_bundle",
+    "bundle_path": "/data/cosmos_lite/quantized_bundle",
+    "checkpoint_path": null,
+    "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "model_family": "cosmos3_policy",
+    "strategy": "gen_branch_w8a8"
+  },
+  "repository": {
+    "dirty": false,
+    "revision": "2b5f5f3e8c02632f04432644ac0bf31780f554b5",
+    "root": "/opt/cosmos-lite"
+  },
+  "requested": {
+    "model": {
+      "artifact": "quantized_bundle",
+      "bundle_dir": "/data/cosmos_lite/quantized_bundle",
+      "checkpoint_path": null,
+      "family": "cosmos3_policy",
+      "strategy": "gen_branch_w8a8"
+    },
+    "profile": "cosmos_lite_quantized_4090",
+    "runtime": {
+      "attention_backend": "sage_attention",
+      "backend_policy": "strict"
+    },
+    "sampling": {
+      "denoise_steps": 2,
+      "deterministic_seed": true,
+      "guidance": 3.0,
+      "seed": 0,
+      "shift": 5.0
+    },
+    "schema_version": 1,
+    "server": {
+      "host": "127.0.0.1",
+      "port": 8000
+    }
+  },
+  "runtime_probe": {
+    "compute_capability": [8, 9],
+    "cuda_available": true,
+    "cuda_version": "12.8",
+    "gpu_name": "NVIDIA GeForce RTX 4090",
+    "sageattention_installed": true,
+    "sageattention_sm89": true,
+    "torch_version": "2.10.0+cu128",
+    "triton_installed": true
+  },
+  "schema_version": 1
+}

@@ -1,0 +1,79 @@
+# Cosmos-Lite v0.3.0 remote-policy smoke preset.
+#
+# Cosmos-Lite runs in its own Python 3.13/CUDA environment and exposes the
+# upstream OpenPI msgpack+NumPy WebSocket protocol.  This Zetta process is a
+# CPU client.  Replace the resolved-config path and manifest digest with the
+# values produced by the service before launching the Runtime.
+
+env_family: fake
+env_config:
+  action_dim: 8
+  chunk_size: 32
+  episode_length: 64
+  image_height: 540
+  image_width: 640
+  state_dim: 8
+  instruction: "move the robot arm to the requested target"
+
+gateway:
+  heartbeat_timeout_seconds: 60.0
+  heartbeat_interval_seconds: 10.0
+
+transport:
+  kind: inproc
+  command_timeout_seconds: 300.0
+
+env_worker:
+  group_name: env
+  num_ranks: 1
+  placement_strategy: node
+  max_sessions_per_rank: 1
+  default_pool_size: 1
+
+rollout_worker:
+  group_name: rollout
+  num_ranks: 1
+  placement_strategy: node
+  tensor_parallel_size: 1
+  pipeline_parallel_size: 1
+  policy_id: cosmos_lite
+  policy_family: cosmos_lite
+  policy_backend: cosmos_lite
+  device: cpu
+  dtype: float32
+  max_concurrent_inferences: 1
+  policy_config:
+    endpoint: ws://127.0.0.1:8000
+    resolved_config_path: /data/cosmos_lite/runs/policy/server/resolved_deployment_config.json
+    expected_manifest_sha256: "<replace-with-64-char-manifest-sha256>"
+    expected_repository_revision: 2b5f5f3e8c02632f04432644ac0bf31780f554b5
+    action_dim: 8
+    actions_per_chunk: 32
+    joint_position_dim: 7
+    image_layout: single
+    connect_timeout_s: 5.0
+    request_timeout_s: 120.0
+    maximum_payload_bytes: 8388608
+    allow_insecure_remote: false
+    allow_dirty_upstream: false
+    allow_runtime_fallbacks: false
+  scheduler:
+    max_batch_size: 1
+    max_wait_ms: 0.0
+    max_queue_depth: 16
+    max_inflight_per_application: 4
+    max_inflight_per_session: 1
+    fixed_batch_size: null
+
+admission:
+  require_auth: false
+  tokens: {}
+  max_sessions_per_application: 4
+  max_inflight_operations_per_application: 8
+  max_inflight_operations_per_session: 2
+  max_total_inflight_operations: 16
+
+payload:
+  inline_threshold_bytes: 262144
+  request_limit_bytes: 8388608
+  image_codec: png

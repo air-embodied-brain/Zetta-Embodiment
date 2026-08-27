@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zetta Contributors
 """Env and policy backends, plus the sole resolution point for "select a backend by config."
 
 ``fake`` is pure stdlib + numpy; ``rlinf_env`` / ``rlinf_policy`` and
@@ -54,9 +55,8 @@ image, so it remains "declared but not implemented," and
 ``RoboCasaSession``) will be added later.
 """
 
-POLICY_BACKENDS = ("fake", "zetta_openpi", "groot")
-"""Optional policy backends: ``fake``, ``zetta_openpi`` (openpi / pi0.5), and
-``groot`` (the current branch's GR00T)."""
+POLICY_BACKENDS = ("fake", "zetta_openpi", "groot", "cosmos_lite")
+"""Optional policy backends, including remote Cosmos-Lite serving."""
 
 
 def register_env_family_for(env_family: str) -> Any:
@@ -116,7 +116,8 @@ def build_policy_core(
     """Build a ``PolicyInferenceCore`` for the named backend.
 
     Args:
-        backend: ``"fake"``, ``"rlinf"``, or ``"groot"``.
+        backend: ``"fake"``, ``"zetta_openpi"``, ``"groot"``, or
+            ``"cosmos_lite"``.
         policy_config: Backend-private configuration (``RlinfPolicyConfig``
             fields for the ``rlinf`` backend, ``GrootPolicyConfig`` fields
             for the ``groot`` backend).
@@ -178,6 +179,22 @@ def build_policy_core(
         if model_version:
             merged.setdefault("model_version", model_version)
         return GrootPolicyCore(GrootPolicyConfig.from_mapping(merged))
+    if backend == "cosmos_lite":
+        from rollout_runtime.backends.cosmos_lite import (
+            CosmosLitePolicyConfig,
+            CosmosLitePolicyCore,
+        )
+
+        merged = dict(policy_config or {})
+        merged.setdefault("device", device)
+        merged.setdefault("dtype", dtype)
+        merged.setdefault("action_dim", action_dim)
+        merged.setdefault("actions_per_chunk", actions_per_chunk)
+        if model_version:
+            raise ValueError(
+                "cosmos_lite model_version is derived from its verified deployment"
+            )
+        return CosmosLitePolicyCore(CosmosLitePolicyConfig.from_mapping(merged))
     raise ValueError(
         f"unknown policy backend {backend!r}; expected one of {list(POLICY_BACKENDS)}"
     )
@@ -194,7 +211,8 @@ def policy_compat_constraints(
     so this function copies them over to the EnvWorker.
 
     Args:
-        backend: ``"fake"``, ``"rlinf"``, or ``"groot"``.
+        backend: ``"fake"``, ``"zetta_openpi"``, ``"groot"``, or
+            ``"cosmos_lite"``.
         policy_config: Backend-private configuration.
 
     Returns:
@@ -202,6 +220,12 @@ def policy_compat_constraints(
         (GR00T does not support cuda_graph/fixed batch; single-request
         serialized inference needs no additional hard constraints).
     """
+    if backend == "cosmos_lite":
+        from rollout_runtime.backends.cosmos_lite import CosmosLitePolicyConfig
+
+        return CosmosLitePolicyConfig.from_mapping(
+            dict(policy_config or {})
+        ).compat_key_constraints()
     if backend != "zetta_openpi":
         return {}
     from rollout_runtime.backends.rlinf_policy import RlinfPolicyConfig

@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zetta Contributors
 """Layered import guard (five rules governing module boundaries).
 
 Uses AST scanning of import nodes without executing the module — this way the
@@ -75,6 +76,7 @@ RUNTIME_TOOLING_FILES = frozenset(
         "scripts/deployment/m7_acceptance/rr_lost_probe.py",
         "scripts/deployment/m7_acceptance/rr_eval_batching.py",
         "scripts/deployment/m7_acceptance/rr_serve_overhead.py",
+        "scripts/deployment/smoke_cosmos_lite.py",
         "scripts/experiments/run_ab_runtime.py",
         "scripts/experiments/run_concurrency_ab.py",
         "scripts/experiments/libero_critic_recovery_latency_v3.py",
@@ -116,6 +118,9 @@ allowlist is a tool belonging to runtime itself (in the same category as
 - ``m7_acceptance/rr_serve_overhead.py``: a ``policy_step`` micro-benchmark
   across the embedded / ASGI / TCP arms, providing the per-round-trip cost
   (required in the repository per an independent audit requirement).
+- ``smoke_cosmos_lite.py``: a deployment probe for the optional remote
+  Cosmos-Lite policy backend; it exercises Runtime protocol conversion but
+  does not enter any legacy robot path.
 - ``run_concurrency_ab.py``: a **concurrent** A/B driver for legacy vs.
   rollout, where both arms share the same scripted workload definition (no
   planner). The rollout arm installs its own runtime (``launch/`` +
