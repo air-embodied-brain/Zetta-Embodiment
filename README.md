@@ -11,7 +11,7 @@ Zetta is an efficient closed-loop embodied harness for self-evolving physical in
 - [√] **August 18, 2026:** Open-source Zetta with LIBERO and Robocasa.
 - [√] **August 19, 2026:** Open-source Z-Infra with LIBERO support.
 - [√] **August 20, 2026:** Add RoboCasa support.
-- [ ] **August 27, 2026:** Add NVIDIA Cosmos model support.
+- [√] **August 27, 2026:** Add NVIDIA Cosmos model support.
 - [ ] **September 3, 2026:** Add RoboTwin environment support.
 - [ ] **September 10, 2026:** Add ManiSkill environment support.
 - [ ] **September 17, 2026:** Add BEHAVIOR environment support.
