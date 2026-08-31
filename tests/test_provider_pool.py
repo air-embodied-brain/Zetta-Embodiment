@@ -548,3 +548,25 @@ def test_build_planner_uses_external_central_broker_when_configured(
     )
     assert not isinstance(planner._model, FailoverModel)
     assert str(planner._model.base_url).rstrip("/") == "http://127.0.0.1:4110/v1"
+
+
+@pytest.mark.parametrize("model_name", ["gpt-5.6-sol", "deployment-alias"])
+def test_build_planner_qualifies_bare_model_for_openai_responses(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, model_name: str
+):
+    monkeypatch.delenv(PROVIDERS_ENV, raising=False)
+    monkeypatch.delenv("ZETTA_API_PROVIDER_BROKER_URL", raising=False)
+    monkeypatch.delenv("ZETTA_API_PROVIDER_BROKER_API_KEY", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    planner = build_planner(
+        "api",
+        output_dir=tmp_path,
+        recipe_tag="test-openai-alias",
+        env_name="libero",
+        base_url="https://provider.invalid/v1",
+        model=model_name,
+        reasoning_effort="xhigh",
+    )
+
+    assert planner._model.model_name == model_name

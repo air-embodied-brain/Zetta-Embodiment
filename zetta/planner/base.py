@@ -124,6 +124,13 @@ def build_planner(
                 "'openai:gpt-5.5', 'openai-chat:glm-5.2')."
             )
 
+        # Campaign manifests intentionally keep stable deployment aliases such
+        # as ``gpt-5.6-sol`` instead of coupling the frozen protocol to
+        # pydantic-ai's provider syntax.  The API planner's default transport
+        # is OpenAI Responses, so qualify every bare alias at this boundary.
+        # Explicit provider-qualified names remain unchanged.
+        api_model_name = model if ":" in model else f"openai-responses:{model}"
+
         import inspect
 
         from pydantic_ai.models import infer_model
@@ -154,7 +161,7 @@ def build_planner(
                 kwargs["base_url"] = base_url
             return provider_cls(**kwargs)
 
-        provider_pool = load_provider_pool_config(default_model=model)
+        provider_pool = load_provider_pool_config(default_model=api_model_name)
         provider_broker = load_provider_broker_connection()
         if provider_broker is not None:
             if provider_pool is None:
@@ -168,7 +175,9 @@ def build_planner(
                 api_key=broker_api_key,
             )
         elif provider_pool is None:
-            api_model = infer_model(model, provider_factory=_provider_factory)
+            api_model = infer_model(
+                api_model_name, provider_factory=_provider_factory
+            )
         else:
             api_model = build_provider_pool_model(provider_pool)
         return ApiAgentLoop(
