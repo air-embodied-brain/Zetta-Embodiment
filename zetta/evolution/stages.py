@@ -932,6 +932,8 @@ def _diagnosis_visual_contract(
 class CodexStageAgent:
     """One audited Codex invocation per stage with explicit transcript carryover."""
 
+    EVIDENCE_POLICY = "audited-mcp-only-v1"
+
     def __init__(
         self,
         *,
@@ -1133,6 +1135,8 @@ class CodexStageAgent:
                     ):
                         continue
                     metadata = read_json(attempt_invocation)
+                    if metadata.get("evidence_policy") != self.EVIDENCE_POLICY:
+                        continue
                     provider_thread_id = metadata.get("provider_thread_id")
                     if (
                         not isinstance(provider_thread_id, str)
@@ -1149,6 +1153,7 @@ class CodexStageAgent:
                             "reasoning_effort": metadata.get("reasoning_effort"),
                             "resumed": bool(metadata["provider_reported_resumed"]),
                             "reconstructed": bool(metadata["reconstructed"]),
+                            "evidence_policy": self.EVIDENCE_POLICY,
                             "successful_attempt": attempt.name,
                             "output_sha256": canonical_sha256(recovered_output),
                             "context_recovered_after_commit": True,
@@ -1161,6 +1166,7 @@ class CodexStageAgent:
                         f"{stage} output exists without a recoverable provider context"
                     )
             context = read_json(context_path)
+            self.require_evidence_policy(context, stage=stage)
             self.session_id = str(context["session_id"])
             self.thread_id = context.get("provider_thread_id")
             self.reconstructed = bool(context.get("reconstructed", False))
@@ -1205,6 +1211,8 @@ class CodexStageAgent:
                 continue
             metadata = read_json(attempt_invocation)
             if metadata.get("error"):
+                continue
+            if metadata.get("evidence_policy") != self.EVIDENCE_POLICY:
                 continue
             recorded_input_sha256 = metadata.get("input_sha256")
             if input_revision and recorded_input_sha256 != payload_sha256:
@@ -1261,6 +1269,7 @@ class CodexStageAgent:
                     "reasoning_effort": metadata.get("reasoning_effort"),
                     "resumed": bool(metadata.get("provider_reported_resumed", False)),
                     "reconstructed": bool(metadata.get("reconstructed", False)),
+                    "evidence_policy": self.EVIDENCE_POLICY,
                     "successful_attempt": attempt.name,
                     "output_sha256": canonical_sha256(recovered),
                     "revalidated_completed_attempt": True,
@@ -1285,9 +1294,6 @@ class CodexStageAgent:
             self._add_evidence_tool(toolkit, access_log=access_log)
             available = {str(spec["name"]) for spec in toolkit.get_tools_spec()}
             allowed = available & {
-                "read_text_file",
-                "read_image",
-                "list_files",
                 "describe_tools",
                 "read_campaign_artifact",
             }
@@ -1309,6 +1315,9 @@ class CodexStageAgent:
                     reasoning_effort=self.reasoning_effort,
                     planner_timeout_s=self.timeout_s,
                     codex_thread_id=resume_thread_id,
+                    codex_repo_root=attempt,
+                    codex_sandbox="read-only",
+                    codex_native_tools=False,
                 )
                 result = planner.solve(
                     system_prompt=effective_system,
@@ -1344,6 +1353,7 @@ class CodexStageAgent:
                 "provider_thread_id": stats.get("thread_id"),
                 "provider_reported_resumed": bool(stats.get("thread_resumed", False)),
                 "reconstructed": reconstruct,
+                "evidence_policy": self.EVIDENCE_POLICY,
                 "error": result.error,
                 "stats": stats,
                 "transcript_sha256": canonical_sha256(result.messages),
@@ -1410,6 +1420,7 @@ class CodexStageAgent:
                 "reasoning_effort": self.reasoning_effort,
                 "resumed": bool(metadata["provider_reported_resumed"]),
                 "reconstructed": self.reconstructed,
+                "evidence_policy": self.EVIDENCE_POLICY,
                 "successful_attempt": metadata["attempt"],
                 "output_sha256": canonical_sha256(parsed),
                 **input_revision,
@@ -1417,6 +1428,17 @@ class CodexStageAgent:
             overwrite=False,
         )
         return parsed
+
+    @classmethod
+    def require_evidence_policy(
+        cls, context: dict[str, Any], *, stage: str
+    ) -> None:
+        """Reject provider context created before filesystem evidence isolation."""
+        if context.get("evidence_policy") != cls.EVIDENCE_POLICY:
+            raise ValueError(
+                f"{stage} context predates enforced evidence isolation; "
+                "start a fresh campaign"
+            )
 
     @staticmethod
     def _validate_visual_access(

@@ -110,6 +110,9 @@ def build_planner(
     dashboard: Any = None,
     no_images: bool = False,
     codex_thread_id: str | None = None,
+    codex_repo_root: str | Path | None = None,
+    codex_sandbox: str | None = None,
+    codex_native_tools: bool = True,
     reasoning_effort: str | None = None,
 ):
     """Build a planner for the given backend, resolving credentials from env vars."""
@@ -211,7 +214,7 @@ def build_planner(
             )
         return CodexPlanner(
             output_dir=output_dir,
-            repo_root=get_repo_root(),
+            repo_root=codex_repo_root or get_repo_root(),
             model=model,
             reasoning_effort=reasoning_effort,
             timeout_s=cx_timeout_s,
@@ -219,5 +222,7 @@ def build_planner(
             output_path=Path(output_dir) / f"codex_{recipe_tag}.txt",
             dashboard=dashboard,
             resume_thread_id=codex_thread_id,
+            sandbox=codex_sandbox,
+            native_tools=codex_native_tools,
         )
     raise ValueError(f"unknown planner_type: {planner_type}")

@@ -1555,6 +1555,7 @@ def _active_stage1_context(store: CampaignStore) -> dict[str, Any]:
         if not context_path.is_file():
             continue
         context = read_json(context_path)
+        CodexStageAgent.require_evidence_policy(context, stage="Stage1")
         output_path = stage_root / "output.json"
         if output_path.is_file():
             output = read_json(output_path)
@@ -1639,6 +1640,7 @@ def _latest_stage2_context(store: CampaignStore) -> dict[str, Any]:
 
         path = stage_root / "context.json"
         context = read_json(path)
+        CodexStageAgent.require_evidence_policy(context, stage="Stage2")
         output_path = stage_root / "output.json"
         output = read_json(output_path)
         if context.get("output_sha256") != canonical_sha256(output):
@@ -4146,6 +4148,7 @@ def run_diagnosis_stage(
         context = _latest_stage2_context(store)
     elif cluster_context_path.is_file():
         context = read_json(cluster_context_path)
+        CodexStageAgent.require_evidence_policy(context, stage="Cluster Agent")
         successful_attempt = context.get("successful_attempt")
         cluster_attempt_root = (
             cluster_context_path.parent / str(successful_attempt)

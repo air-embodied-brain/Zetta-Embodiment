@@ -37,6 +37,7 @@ from zetta.evolution.models import (
     RecoveryRule,
     RecoveryStep,
 )
+from zetta.evolution.stages import CodexStageAgent
 from zetta.evolution.store import CampaignStore
 
 
@@ -238,6 +239,7 @@ def test_first_candidate_resumes_hashed_diagnosis_context(tmp_path: Path) -> Non
         {
             "session_id": "campaign-session",
             "provider_thread_id": "diagnosis-thread",
+            "evidence_policy": CodexStageAgent.EVIDENCE_POLICY,
         },
         overwrite=False,
     )
@@ -246,6 +248,7 @@ def test_first_candidate_resumes_hashed_diagnosis_context(tmp_path: Path) -> Non
         {
             "session_id": "stale-session",
             "provider_thread_id": "stale-thread",
+            "evidence_policy": CodexStageAgent.EVIDENCE_POLICY,
         },
         overwrite=False,
     )
@@ -287,6 +290,7 @@ def test_latest_stage2_context_skips_unregistered_proposal_directory(
             {
                 "session_id": "campaign-session",
                 "provider_thread_id": f"provider-{index}",
+                "evidence_policy": CodexStageAgent.EVIDENCE_POLICY,
             },
         )
         atomic_write_json(
@@ -294,6 +298,7 @@ def test_latest_stage2_context_skips_unregistered_proposal_directory(
             {
                 "session_id": "campaign-session",
                 "provider_thread_id": f"provider-{index}",
+                "evidence_policy": CodexStageAgent.EVIDENCE_POLICY,
                 "successful_attempt": "attempt-000",
                 "output_sha256": canonical_sha256(output),
             },

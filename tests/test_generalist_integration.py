@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zetta Contributors
 from __future__ import annotations
 
 import unittest
@@ -79,6 +80,17 @@ class GeneralistIntegrationTests(unittest.TestCase):
             reasoning_summary="detailed",
         )
         self.assertIn('model_reasoning_summary="detailed"', overrides)
+
+    def test_codex_restricted_profile_disables_native_file_tools(self):
+        overrides = _codex_mcp_config_overrides(
+            mcp_url="http://127.0.0.1:1/mcp",
+            base_url=None,
+            native_tools=False,
+        )
+        self.assertIn("features.shell_tool=false", overrides)
+        self.assertIn("features.shell_snapshot=false", overrides)
+        self.assertIn("tools.view_image=false", overrides)
+        self.assertIn("tools.web_search=false", overrides)
 
     def test_codex_recorder_reads_nested_total_usage(self):
         recorder = _Recorder(max_turns=2)
