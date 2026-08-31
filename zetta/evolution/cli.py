@@ -173,6 +173,14 @@ def _parser() -> argparse.ArgumentParser:
     worker.add_argument("--slot-broker-root")
     worker.add_argument("--environment-ready-manifest")
     worker.add_argument("--maximum-active-environment-slots", type=int)
+
+    recover = commands.add_parser(
+        "recover-abandoned",
+        help="append-only close abandoned queue claims without replaying side effects",
+    )
+    recover.add_argument("--queue-root", required=True)
+    recover.add_argument("--host", required=True)
+    recover.add_argument("--stale-after-s", type=float, required=True)
     return parser
 
 
@@ -382,6 +390,20 @@ def main() -> int:
             environment_ready_manifest=args.environment_ready_manifest,
             maximum_active_environment_slots=args.maximum_active_environment_slots,
         )
+    if args.command == "recover-abandoned":
+        queue = SharedHostQueue(args.queue_root)
+        recovered = queue.recover_abandoned(
+            args.host,
+            stale_after_s=args.stale_after_s,
+        )
+        _print(
+            {
+                "host": args.host,
+                "recovered": recovered,
+                "queue": queue.counts(),
+            }
+        )
+        return 0
     raise AssertionError(args.command)
 
 

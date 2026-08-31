@@ -3,7 +3,9 @@
 
 from __future__ import annotations
 
+import json
 import os
+import sys
 import time
 from datetime import datetime
 from pathlib import Path
@@ -12,6 +14,7 @@ import pytest
 
 import zetta.evolution.queue as queue_module
 from zetta.evolution.campaign import _known_job_ids, ingest_queue_results
+from zetta.evolution.cli import main as evolution_cli_main
 from zetta.evolution.jsonio import atomic_write_json, read_json
 from zetta.evolution.models import CampaignManifest, EpisodeRecord
 from zetta.evolution.queue import RolloutJob, SharedHostQueue, run_worker
@@ -312,6 +315,47 @@ def test_claim_after_crash_closes_once_and_fences_late_worker(
             result=read_json(terminal)["result"],
             claim_token=token,
         )
+
+
+def test_recover_abandoned_cli_closes_stale_claim_idempotently(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    queue = SharedHostQueue(tmp_path / "queue")
+    job = _job(tmp_path)
+    claimed, _, _ = _claim(queue, job)
+    _make_stale(claimed)
+    command = [
+        "zetta.evolution.cli",
+        "recover-abandoned",
+        "--queue-root",
+        str(queue.root),
+        "--host",
+        "host-a",
+        "--stale-after-s",
+        "30",
+    ]
+
+    monkeypatch.setattr(sys, "argv", command)
+    assert evolution_cli_main() == 0
+    first = json.loads(capsys.readouterr().out)
+    assert first == {
+        "host": "host-a",
+        "recovered": 1,
+        "queue": {
+            "pending": 0,
+            "running": 0,
+            "completed": 0,
+            "failed": 1,
+        },
+    }
+
+    monkeypatch.setattr(sys, "argv", command)
+    assert evolution_cli_main() == 0
+    second = json.loads(capsys.readouterr().out)
+    assert second["recovered"] == 0
+    assert second["queue"] == first["queue"]
 
 
 def test_published_episode_result_is_adopted_after_worker_crash(
