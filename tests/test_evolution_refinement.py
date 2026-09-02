@@ -18,6 +18,7 @@ from zetta.evolution.jsonio import (
 )
 from zetta.evolution.lifecycle import (
     _agent_artifact_index,
+    _all_rejected_candidates,
     _bounded_gate_descriptors,
     _bounded_refinement_artifact_index,
     _candidate_feature_contract,
@@ -532,7 +533,7 @@ def _gate_record(
     )
 
 
-def test_candidate_feature_contract_rejects_split_reset_action_features(
+def test_candidate_feature_contract_classifies_split_and_sparse_features(
     tmp_path: Path,
 ) -> None:
     diagnosis = _diagnosis()
@@ -571,10 +572,13 @@ def test_candidate_feature_contract_rejects_split_reset_action_features(
     )
 
     assert contract["eligible"] is False
+    assert contract["replay_complete"] is False
+    assert contract["requires_online_validation"] is False
     assert contract["unsupported_feature_names"] == []
     assert contract["trajectory_reports"][0]["unavailable_rule_ids"] == [
         critic.rule_id
     ]
+    assert contract["trajectory_reports"][0]["suffix_incomplete_rule_ids"] == []
 
     states.write_text(
         '{"step_index":1,"state":'
@@ -588,6 +592,8 @@ def test_candidate_feature_contract_rejects_split_reset_action_features(
         trajectories=((record, states),),
     )
     assert contract["eligible"] is True
+    assert contract["replay_complete"] is True
+    assert contract["requires_online_validation"] is False
 
     states.write_text(
         '{"step_index":0,"state":'
@@ -602,13 +608,65 @@ def test_candidate_feature_contract_rejects_split_reset_action_features(
         parent_bundle=None,
         trajectories=((record, states),),
     )
-    assert contract["eligible"] is False
-    assert contract["trajectory_reports"][0]["unavailable_rule_ids"] == [
+    assert contract["eligible"] is True
+    assert contract["replay_complete"] is False
+    assert contract["requires_online_validation"] is True
+    assert contract["trajectory_reports"][0]["unavailable_rule_ids"] == []
+    assert contract["trajectory_reports"][0]["suffix_incomplete_rule_ids"] == [
         critic.rule_id
     ]
 
 
-def test_feature_contract_rejection_is_append_only_and_counts_candidate_round(
+def test_five_action_chunk_sparse_privileged_feature_requires_online_validation(
+    tmp_path: Path,
+) -> None:
+    diagnosis = _diagnosis()
+    base = _candidate(candidate_id="candidate-chunk-sparse", diagnosis=diagnosis)
+    privileged_feature = "privileged.task.manipulated_object.grasped"
+    command_feature = "command.realization.eef_motion_m"
+    critic = replace(
+        base.critic_rules[0],
+        feature=command_feature,
+        activation_conditions=(
+            CriticPredicate(
+                feature=privileged_feature,
+                operator="eq",
+                threshold=False,
+            ),
+        ),
+    )
+    candidate = replace(base, critic_rules=(critic,))
+    states = tmp_path / "five-action-chunks.jsonl"
+    state_rows = []
+    for step in range(10):
+        state: dict[str, Any] = {command_feature: 0.0}
+        if step % 5 == 4:
+            state[privileged_feature] = False
+        state_rows.append(json.dumps({"step_index": step, "state": state}) + "\n")
+    states.write_text("".join(state_rows), encoding="utf-8")
+    record = _gate_record(
+        logical_id="chunk-sparse",
+        bundle_sha256=None,
+        states=states,
+        action_hash="b" * 64,
+    )
+
+    contract = _candidate_feature_contract(
+        candidate=candidate,
+        parent_bundle=None,
+        trajectories=((record, states),),
+    )
+
+    assert contract["eligible"] is True
+    assert contract["replay_complete"] is False
+    assert contract["requires_online_validation"] is True
+    trajectory = contract["trajectory_reports"][0]
+    assert trajectory["unavailable_rule_ids"] == []
+    assert trajectory["suffix_incomplete_rule_ids"] == [critic.rule_id]
+    assert trajectory["suffix_missing_feature_names"] == [privileged_feature]
+
+
+def test_feature_contract_rejection_is_append_only_and_does_not_count_round(
     tmp_path: Path,
 ) -> None:
     root = tmp_path / "contract-rejection"
@@ -655,9 +713,8 @@ def test_feature_contract_rejection_is_append_only_and_counts_candidate_round(
     assert first["rejection"]["preflight_disposition"] == (
         "rejected_trajectory_feature_contract"
     )
-    assert _rejected_candidates_for_cluster(store, diagnosis.cluster_id) == (
-        candidate.sha256,
-    )
+    assert _rejected_candidates_for_cluster(store, diagnosis.cluster_id) == ()
+    assert _all_rejected_candidates(store) == set()
     assert store.candidate_ledger.records() == []
 
 
@@ -887,6 +944,97 @@ def test_v3_style_shadow_false_positives_are_artifacted_before_live_gate(
     assert shadow["preflight_disposition"] == (
         "rejected_success_control_false_positive_rate"
     )
+
+
+def test_sparse_feature_contract_forces_online_gate_after_inconclusive_replay(
+    tmp_path: Path, monkeypatch
+) -> None:
+    root = tmp_path / "campaign-sparse-feature"
+    store = CampaignStore(root)
+    store.initialize(_manifest())
+    states = root / "source" / "states.jsonl"
+    states.parent.mkdir(parents=True)
+    states.write_text(
+        '{"step_index":0,"state":'
+        '{"privileged.dishwasher.rack.position":0.0}}\n'
+        '{"step_index":1,"state":{"command.available":true}}\n',
+        encoding="utf-8",
+    )
+    store.record_episode(
+        EpisodeRecord(
+            episode_id="rollout-sparse",
+            logical_id="g0000-rollout-000",
+            generation=0,
+            seed=7,
+            policy_rng=271828,
+            bundle_sha256=None,
+            status="valid",
+            success=False,
+            started_at="2026-01-01T00:00:00+00:00",
+            finished_at="2026-01-01T00:00:01+00:00",
+            elapsed_s=1.0,
+            artifact_index={"states": str(states)},
+            failure_segment=FailureSegment(
+                segment_id="segment-sparse",
+                episode_id="rollout-sparse",
+                failure_class="stall",
+                stage="contact",
+                tool=CONTACT_PUSH_TOOL,
+                summary="contact made no progress",
+                earliest_divergence_step=1,
+                start_step=0,
+                end_step=1,
+            ),
+        )
+    )
+    clusters = analyze_failures(root)
+    store.transition(CampaignPhase.DIAGNOSE)
+    diagnosis = replace(
+        _diagnosis(), cluster_id=str(clusters["clusters"][0]["cluster_id"])
+    )
+    store.register_diagnosis(diagnosis)
+    store.transition(CampaignPhase.PROPOSE)
+    monkeypatch.setattr(
+        "zetta.evolution.lifecycle.CodexStageAgent", _CapturingRefinementAgent
+    )
+
+    def apparently_conclusive_shadow(**values: Any) -> dict[str, Any]:
+        return {
+            "schema_version": 1,
+            "candidate_sha256": values["candidate"].sha256,
+            "parent_bundle_sha256": None,
+            "target_count": 1,
+            "target_detected": 1,
+            "target_triggered_anywhere": 1,
+            "success_control_count": 0,
+            "success_control_false_positives": 0,
+            "success_control_false_positive_rate": None,
+            "preflight_conclusive": True,
+            "passed_detection_preflight": True,
+            "outcomes": [],
+            "report_sha256": "5" * 64,
+        }
+
+    monkeypatch.setattr(
+        "zetta.evolution.lifecycle.evaluate_shadow_replay",
+        apparently_conclusive_shadow,
+    )
+
+    result = run_proposal_stage(
+        campaign_root=root,
+        tool_catalog={"tools": [{"name": CONTACT_PUSH_TOOL}]},
+    )
+
+    shadow = result["shadow_replay"]
+    assert shadow["feature_contract"]["eligible"] is True
+    assert shadow["feature_contract"]["replay_complete"] is False
+    assert shadow["feature_contract"]["requires_online_validation"] is True
+    assert shadow["preflight_conclusive"] is False
+    assert shadow["passed_detection_preflight"] is False
+    assert shadow["preflight_disposition"] == (
+        "inconclusive_without_success_control_online_gate_required"
+    )
+    assert CampaignStore(root).state()["phase"] == CampaignPhase.SAME_SEED_GATE
 
 
 def test_rejected_gate_evidence_is_opaque_and_refinement_reconstructs_fresh_thread(
