@@ -1,5 +1,7 @@
 # Zetta
 
+[![Papers with Code: SOTA on RoboCasa365 Atomic-Seen](https://paperswithcode.co/api/v1/papers/2608.16590/leaderboard-badge.svg?eval=26154&live=1)](https://paperswithcode.co/api/v1/papers/2608.16590/leaderboard-badge-link?eval=26154)
+
 <div align="center">
   <img src="teaser.png" alt="Zetta Overview" width="800"/>
 </div>
@@ -82,14 +84,17 @@ python -m pip install -e ".[test]"
 
 ### VLA runtime environment (LIBERO-Pro or RoboCasa)
 
-`scripts/deployment/install_vla_env.sh` builds a venv for one of two tracks; the tracks cannot share a venv state (incompatible `robosuite` versions). See `scripts/deployment/VLA_ENV_SETUP.md` for the full bug log.
+`scripts/deployment/install_vla_env.sh` builds a venv for one of two tracks;
+the tracks cannot share a venv state (incompatible `robosuite` versions). See
+the [VLA runtime setup guide](scripts/deployment/VLA_ENV_SETUP.md) for the full
+installation notes, compatibility fixes, and known limitations.
 
 **LIBERO-Pro + Pi0.5**
 
 ```bash
-REPO_ROOT=/abs/path/to/Zetta-Embodiment \
-VENV_ROOT=/abs/path/to/venvs/vla-env \
-  bash scripts/deployment/install_vla_env.sh --track libero-pro
+export REPO_ROOT=/abs/path/to/Zetta-Embodiment
+export VENV_ROOT=/abs/path/to/venvs/vla-env
+bash scripts/deployment/install_vla_env.sh --track libero-pro
 ```
 
 `install_vla_env.sh` downloads the LIBERO-Pro scene/object assets automatically. To fetch or refresh them manually:
@@ -101,10 +106,10 @@ VENV_ROOT=/abs/path/to/venvs/vla-env \
 **RoboCasa + GR00T** (needs a source checkout with `robocasa/`, `robosuite/`, `Isaac-GR00T/`)
 
 ```bash
-REPO_ROOT=/abs/path/to/Zetta-Embodiment \
-VENV_ROOT=/abs/path/to/venvs/vla-env \
-ROBOCASA_SRC_ROOT=/abs/path/to/robocasa-source-checkout \
-  bash scripts/deployment/install_vla_env.sh --track robocasa
+export REPO_ROOT=/abs/path/to/Zetta-Embodiment
+export VENV_ROOT=/abs/path/to/venvs/vla-env
+export ROBOCASA_SRC_ROOT=/abs/path/to/robocasa-source-checkout
+bash scripts/deployment/install_vla_env.sh --track robocasa
 ```
 
 RoboCasa also needs its kitchen assets (~10GB); see the [RoboCasa installation guide](https://robocasa.ai/docs/build/html/introduction/installation.html) for details:

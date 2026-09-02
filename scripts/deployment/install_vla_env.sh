@@ -23,7 +23,7 @@
 #
 # Validated combinations (independently tested for both tracks on the same machine
 # with a single GPU):
-#   libero-pro: mujoco==3.3.1 + robosuite==1.4.1 + liberopro==0.1.1
+#   libero-pro: mujoco==3.3.1 + robosuite==1.4.1 + rpent-liberopro==0.1.1
 #               + rlinf-openpi==0.1.1 (real openpi/pi0.5 inference)
 #   robocasa:   mujoco==3.3.1 + robosuite==1.5.2 + robocasa==1.0.1
 #               + gr00t==1.1.0 + flash-attn==2.8.3
@@ -98,6 +98,13 @@
 #                         robot models bundled with robosuite (such as
 #                         robots/panda/robot.xml), so environment reset would raise
 #                         FileNotFoundError.
+#   LIBERO_CONFIG_PATH    libero-pro track only: directory for liberopro's config.yaml.
+#                         Defaults to $VENV_ROOT/.liberopro-config so validation cannot
+#                         silently reuse another environment's user-global config.
+#   LIBERO_PRO_ASSET_PATH
+#                         libero-pro track only: an existing raw or composite assets
+#                         tree to link instead of downloading from Hugging Face. This is
+#                         the upstream liberopro-download-assets offline input.
 #   SKIP_ASSET_DOWNLOAD   Set to 1 to skip downloading LIBERO-Pro assets and building
 #                         the composite asset tree (libero-pro track; use when the
 #                         assets have already been prepared elsewhere)
@@ -113,7 +120,8 @@
 #                         when the build host cannot reach github.com (an internal mirror
 #                         or file:// path may be used)
 #   LIBEROPRO_PACKAGE     Optional for the libero-pro track: pip requirement for the
-#                         upstream LIBERO-Pro package. Defaults to liberopro==0.1.1;
+#                         upstream LIBERO-Pro package. Defaults to
+#                         rpent-liberopro==0.1.1;
 #                         override it with a full URL when using an internal mirror.
 #
 # Prerequisites (validated on Ubuntu 22.04; verify package names on other distributions):
@@ -136,7 +144,8 @@ PYTHON_BIN="${PYTHON_BIN:-python3.10}"
 SKIP_ASSET_DOWNLOAD="${SKIP_ASSET_DOWNLOAD:-0}"
 ROBOCASA_SRC_ROOT="${ROBOCASA_SRC_ROOT:-}"
 FLASH_ATTN_WHEEL="${FLASH_ATTN_WHEEL:-}"
-LIBEROPRO_PACKAGE="${LIBEROPRO_PACKAGE:-liberopro==0.1.1}"
+LIBEROPRO_PACKAGE="${LIBEROPRO_PACKAGE:-rpent-liberopro==0.1.1}"
+LIBERO_CONFIG_PATH="${LIBERO_CONFIG_PATH:-$VENV_ROOT/.liberopro-config}"
 
 TRACK=""
 while [ $# -gt 0 ]; do
@@ -163,6 +172,10 @@ case "$TRACK" in
     exit 1
     ;;
 esac
+
+if [ "$TRACK" = "libero-pro" ]; then
+  export LIBERO_CONFIG_PATH
+fi
 
 log() { printf '\n=== [%s] %s ===\n' "$TRACK" "$*"; }
 
@@ -206,7 +219,17 @@ log "2/9 Install mujoco==3.3.1"
 if [ "$TRACK" = "libero-pro" ]; then
   log "3/9 [libero-pro] Install LIBERO-Pro (isolate its transitive rlinf-libero dependency)"
   "$PY" -m pip install "$LIBEROPRO_PACKAGE" --no-deps
-  "$PY" -m pip install "robosuite>=1.4,<1.5" bddl cloudpickle gym h5py imageio opencv-python termcolor
+  # Install every direct dependency from rpent-liberopro's wheel metadata except
+  # rlinf-libero. That distribution pulls in the main RLinf framework and conflicts
+  # with the intentionally isolated rlinf-openpi policy backend installed below.
+  # OpenCV 5 requires NumPy 2, while rpent-liberopro requires NumPy <2, so keep the
+  # last OpenCV series compatible with the benchmark's declared NumPy range.
+  "$PY" -m pip install \
+    "numpy>=1.22,<2" \
+    "opencv-python<4.12" \
+    "robosuite>=1.4,<1.5" \
+    "matplotlib>=3.5.3" \
+    bddl cloudpickle easydict filelock gym h5py huggingface-hub imageio pyyaml termcolor tqdm
 
   log "3.1/9 [libero-pro] Fix: verify that robosuite is the 1.4.x series required by liberopro"
   INSTALLED_ROBOSUITE="$("$PY" -m pip show robosuite 2>/dev/null | awk '/^Version:/{print $2}')"
@@ -254,10 +277,15 @@ if [ "$TRACK" = "libero-pro" ]; then
   "$PY" - <<'PYEOF'
 from importlib.metadata import distributions
 names = {str(item.metadata.get("Name", "")).lower() for item in distributions()}
-forbidden = sorted(name for name in names if name.startswith("rlinf-") and name != "rlinf-openpi")
-if "rlinf" in names or forbidden:
-    raise SystemExit(f"forbidden RLinf distributions installed: {['rlinf'] if 'rlinf' in names else []}{forbidden}")
-print("RLinf distribution guard OK: only rlinf-openpi is allowed")
+allowed = {"rlinf-openpi", "rlinf-transformer-openpi"}
+forbidden = sorted(
+    name
+    for name in names
+    if (name == "rlinf" or name.startswith("rlinf-")) and name not in allowed
+)
+if forbidden:
+    raise SystemExit(f"forbidden RLinf distributions installed: {forbidden}")
+print("RLinf distribution guard OK: only the OpenPI packages are installed")
 PYEOF
 
   log "5.1/9 [libero-pro] Fix: rlinf-openpi's dependency chain silently upgrades mujoco to 3.8.1; restore 3.3.1"
@@ -265,6 +293,7 @@ PYEOF
   # openpi itself does not use mujoco at import time (this is only an unused version
   # constraint declared by gym-aloha). LIBERO-Pro needs mujoco to remain at 3.3.1.
   "$PY" -m pip install mujoco==3.3.1 --force-reinstall --no-deps
+  "$PY" -m pip install "numpy>=1.22,<2"
 else
   log "5/9 [robocasa] Install gr00t==1.1.0 in editable mode (from ROBOCASA_SRC_ROOT)"
   "$PY" -m pip install -e "$ROBOCASA_SRC_ROOT/Isaac-GR00T"
@@ -394,16 +423,14 @@ if [ "$TRACK" = "libero-pro" ]; then
   # models/assets bundled with robosuite as the base and merge the assets downloaded
   # by liberopro on top. Both contain a textures/ directory; the liberopro version
   # should take precedence because it contains the more specialized scene textures.
+  COMPOSITE_ASSETS="${LIBERO_COMPOSITE_ASSETS_DIR:-$VENV_ROOT/libero-pro-composite-assets}"
   if [ "$SKIP_ASSET_DOWNLOAD" = "1" ]; then
-    echo "SKIP_ASSET_DOWNLOAD=1; skipping download. Ensure LIBERO_ASSETS_ROOT_OVERRIDE" \
-         "points to a directory containing both robosuite's robots/panda/robot.xml and" \
-         "liberopro's scenes/*.xml (a composite tree, not raw liberopro assets alone)."
+    echo "SKIP_ASSET_DOWNLOAD=1; using the existing composite asset tree: $COMPOSITE_ASSETS"
   else
-    "$VENV_ROOT/bin/liberopro-download-assets"
+    "$VENV_ROOT/bin/liberopro-download-assets" --skip-existing
     LIBEROPRO_PKG_ROOT="$("$PY" -c 'import os, liberopro; print(os.path.dirname(liberopro.__file__))')"
     LIBEROPRO_ASSETS="$LIBEROPRO_PKG_ROOT/liberopro/assets"
     ROBOSUITE_ASSETS="$("$PY" -c 'import os, robosuite; print(os.path.join(os.path.dirname(robosuite.__file__), "models", "assets"))')"
-    COMPOSITE_ASSETS="${LIBERO_COMPOSITE_ASSETS_DIR:-$VENV_ROOT/libero-pro-composite-assets}"
     if [ -d "$COMPOSITE_ASSETS" ]; then
       echo "The composite asset directory already exists; skipping rebuild: $COMPOSITE_ASSETS"
     else
@@ -412,22 +439,26 @@ if [ "$TRACK" = "libero-pro" ]; then
       cp -a "$LIBEROPRO_ASSETS/." "$COMPOSITE_ASSETS/"
       echo "Composite asset tree built: $COMPOSITE_ASSETS"
     fi
-    test -f "$COMPOSITE_ASSETS/robots/panda/robot.xml" || {
-      echo "The composite asset tree is missing robots/panda/robot.xml (the robosuite base was not copied correctly)" >&2
-      exit 1
-    }
-    test -f "$COMPOSITE_ASSETS/scenes/libero_tabletop_base_style.xml" || {
-      echo "The composite asset tree is missing scenes/libero_tabletop_base_style.xml (the liberopro scenes were not copied correctly)" >&2
-      exit 1
-    }
-    echo "Composite asset tree validated (robosuite robot models and LIBERO-Pro scene assets are present)."
-    echo "At runtime, set LIBERO_ASSETS_ROOT_OVERRIDE to this directory: $COMPOSITE_ASSETS"
   fi
+  test -f "$COMPOSITE_ASSETS/robots/panda/robot.xml" || {
+    echo "The composite asset tree is missing robots/panda/robot.xml (the robosuite base was not copied correctly)" >&2
+    exit 1
+  }
+  test -f "$COMPOSITE_ASSETS/scenes/libero_tabletop_base_style.xml" || {
+    echo "The composite asset tree is missing scenes/libero_tabletop_base_style.xml (the liberopro scenes were not copied correctly)" >&2
+    exit 1
+  }
+  export LIBERO_ASSETS_ROOT_OVERRIDE="$COMPOSITE_ASSETS"
+  echo "Composite asset tree validated (robosuite robot models and LIBERO-Pro scene assets are present)."
+  echo "Using LIBERO_ASSETS_ROOT_OVERRIDE=$LIBERO_ASSETS_ROOT_OVERRIDE for the reset smoke test."
 
   log "8/9 [libero-pro] Minimal import/environment creation smoke test (no real VLA checkpoint required)"
   "$PY" - <<'PYEOF'
 import os
 os.environ.setdefault("MUJOCO_GL", "egl")
+from robots.libero.assets import bind_libero_assets_root
+
+bind_libero_assets_root(os.environ["LIBERO_ASSETS_ROOT_OVERRIDE"])
 from liberopro.liberopro.envs import OffScreenRenderEnv
 import glob
 
@@ -486,6 +517,7 @@ For a real rollout, LIBERO_ASSETS_ROOT_OVERRIDE must point to the composite asse
 built in step 7; otherwise, environment reset will raise FileNotFoundError because
 the robosuite robot models are missing:
   cd "$REPO_ROOT"
+  export LIBERO_CONFIG_PATH="$LIBERO_CONFIG_PATH"
   export LIBERO_ASSETS_ROOT_OVERRIDE="${LIBERO_COMPOSITE_ASSETS_DIR:-$VENV_ROOT/libero-pro-composite-assets}"
   "$PY" scripts/experiments/libero_critic_recovery_latency_v3.py \\
     --output /tmp/libero-pi05-smoke \\

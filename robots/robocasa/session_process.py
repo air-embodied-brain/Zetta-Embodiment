@@ -380,12 +380,14 @@ class RemoteRoboCasaSession:
         try:
             self._conn.send([command, payload])
             if not self._conn.poll(self._rpc_timeout_s):
+                self._mark_transport_unusable()
                 raise RemoteSessionCrashed(
                     f"robocasa subprocess (pid={self._process.pid}) did not "
                     f"reply to {command!r} within {self._rpc_timeout_s}s"
                 )
             status, result = self._conn.recv()
         except (OSError, EOFError, ValueError) as exc:
+            self._mark_transport_unusable()
             raise RemoteSessionCrashed(
                 f"robocasa subprocess (pid={self._process.pid}) pipe failed "
                 f"during {command!r}: {exc}"
@@ -483,6 +485,11 @@ class RemoteRoboCasaSession:
             self._conn.close()
         except OSError:
             pass
+
+    def _mark_transport_unusable(self) -> None:
+        """Close and reap a child whose RPC transport can no longer be used."""
+        self._closed = True
+        self._terminate_and_join()
 
     @property
     def is_alive(self) -> bool:

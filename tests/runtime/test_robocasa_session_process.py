@@ -325,9 +325,13 @@ def test_robocasa_current_core_end_to_end_reset_and_chunk_step_with_isolation(
     ``observe_encoded``/``getattr`` branch in ``_observation``.
     """
 
-    def _factory_build(self, env_spec, *, num_envs, seed_offset=0, total_num_processes=1):  # type: ignore[no-untyped-def]
+    def _factory_build(
+        self, env_spec, *, num_envs, seed_offset=0, total_num_processes=1
+    ):  # type: ignore[no-untyped-def]
         from rollout_runtime.backends.robocasa_current import (
             RobocasaCurrentConfig as _Config,
+        )
+        from rollout_runtime.backends.robocasa_current import (
             _RobocasaSlot,
         )
 
@@ -358,9 +362,9 @@ def test_robocasa_current_core_end_to_end_reset_and_chunk_step_with_isolation(
         assert obs.wrist_image is not None
         assert len(obs.extra_view_images) == 1
         assert obs.instruction == "move the pan"
-        assert obs.extras[
-            "raw_state"
-        ]["state.end_effector_position_relative"] == pytest.approx([0.1, 0.2, 0.3])
+        assert obs.extras["raw_state"][
+            "state.end_effector_position_relative"
+        ] == pytest.approx([0.1, 0.2, 0.3])
 
         outcome = core.chunk_step([0], [np.zeros((3, 12), dtype=np.float32)])[0]
         assert outcome.executed_horizon == 3
@@ -375,7 +379,6 @@ def test_slot_out_of_range_is_invalid_argument_when_isolated() -> None:
     core = RobocasaCurrentCore()
     core.build(_spec(), num_envs=1, seed_offset=0)
     try:
-        core.reset([0], ResetSpec(seed=1))
         with pytest.raises(RuntimeApiError) as excinfo:
             core.observe([5])
         assert excinfo.value.info.code is ErrorCode.INVALID_ARGUMENT

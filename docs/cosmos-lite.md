@@ -13,9 +13,9 @@ Cosmos-Lite 进程中占用 GPU，Zetta RolloutWorker 是 CPU 客户端。
 git checkout v0.3.0
 CUDA_VISIBLE_DEVICES=0 examples/robolab_quant/pipeline.sh setup --with-sage
 
-BUNDLE_DIR=/data/cosmos_lite/quantized_bundle \
-DEPLOYMENT_CONFIG=/data/cosmos_lite/deployment.yaml \
-RUN_DIR=/data/cosmos_lite/runs/policy \
+BUNDLE_DIR=/abs/path/to/cosmos-lite/quantized_bundle \
+DEPLOYMENT_CONFIG=/abs/path/to/cosmos-lite/deployment.yaml \
+RUN_DIR=/abs/path/to/cosmos-lite/runs/policy \
 POLICY_GPU=0 \
 examples/robolab_quant/pipeline.sh serve
 ```
@@ -64,11 +64,11 @@ bundle/deployment YAML 启动服务，再更新上述 resolved config 路径和 
 ```bash
 python scripts/deployment/smoke_cosmos_lite.py \
   --endpoint ws://127.0.0.1:8000 \
-  --resolved-config /data/cosmos_lite/runs/policy/server/resolved_deployment_config.json \
+  --resolved-config /abs/path/to/cosmos-lite/runs/policy/server/resolved_deployment_config.json \
   --manifest-sha256 <manifest-sha256> \
   --requests 2 \
   --include-actions \
-  --output /data/cosmos_lite/runs/zetta-smoke.json
+  --output /abs/path/to/cosmos-lite/runs/zetta-smoke.json
 ```
 
 脚本执行两次相同请求，检查：
@@ -83,8 +83,8 @@ python scripts/deployment/smoke_cosmos_lite.py \
 
 ```bash
 python scripts/deployment/visualize_cosmos_lite_replay.py \
-  --input /data/cosmos_lite/runs/zetta-smoke.json \
-  --output /data/cosmos_lite/runs/zetta-smoke.html
+  --input /abs/path/to/cosmos-lite/runs/zetta-smoke.json \
+  --output /abs/path/to/cosmos-lite/runs/zetta-smoke.html
 ```
 
 报告包含冷启动与热态延迟、动作 hash 一致性、模型身份，以及使用

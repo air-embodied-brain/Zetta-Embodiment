@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -297,7 +296,7 @@ def main() -> int:
         ),
     )
     parser.add_argument("--max-actions", type=int, default=1000)
-    parser.add_argument("--actions-per-chunk", type=int, default=8)
+    parser.add_argument("--actions-per-chunk", type=int, default=16)
     parser.add_argument("--role1-planner", choices=("api", "codex"), default="api")
     parser.add_argument("--agent-model", default="gpt-5.6-sol")
     parser.add_argument("--role1-model", default="openai:gpt-5.6-sol")

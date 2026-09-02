@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from scripts.evolution.robocasa_capacity_worker import resolve_gpu
 from zetta.evolution.capacity import (
     DEFAULT_API_CONCURRENCY,
     DEFAULT_SLOT_LADDER,
@@ -23,7 +24,6 @@ from zetta.evolution.capacity import (
     ensure_secret_free_report,
     write_secret_free_report,
 )
-from scripts.evolution.robocasa_capacity_worker import resolve_gpu
 
 
 def _permissive_rules(**changes: object) -> CapacityRules:
@@ -418,6 +418,10 @@ def test_cli_writes_secret_free_fake_report(tmp_path: Path) -> None:
             "0.001",
             "--min-valid-throughput-per-hour",
             "1",
+            "--max-gpu-memory-fraction",
+            "1",
+            "--max-cpu-percent",
+            "100",
         ],
         cwd=repository,
         check=False,
@@ -429,5 +433,7 @@ def test_cli_writes_secret_free_fake_report(tmp_path: Path) -> None:
     report_text = output.read_text(encoding="utf-8")
     report = json.loads(report_text)
     assert report["recommended_slots"] == 4
+    assert report["config"]["rules"]["maximum_gpu_memory_fraction"] == 1.0
+    assert report["config"]["rules"]["maximum_cpu_percent"] == 100.0
     assert "command_template" not in report_text
     assert "api_key" not in report_text

@@ -86,80 +86,49 @@ multi-pixel-median tip from the perception protocol.
 
 ## 2. Setup (do these once on a fresh checkout)
 
-Run the idempotent installer from the repo root:
+Use the maintained
+[`install_vla_env.sh`](../../../scripts/deployment/install_vla_env.sh) flow
+from the repository root:
 
 ```bash
-bash scripts/install_libero_pro_plus.sh
+export REPO_ROOT="$PWD"
+export VENV_ROOT=/abs/path/to/venvs/libero-pro
+bash scripts/deployment/install_vla_env.sh --track libero-pro
 ```
 
-It does all four steps below: the liberopro editable install, applies the
-benchmark-registration patch, syncs the authoritative HF dataset snapshot, and
-verifies with the `get_benchmark(...).get_task(0).language` check. The perception
-observables (depth + both cameras + hi-res) are unconditional once the runner
-launches with `--libero-type pro`; there is nothing perception-specific to
-install beyond the PRO setup itself.
+The installer uses the `rpent-liberopro==0.1.1` distribution (which provides
+the `liberopro` import package), installs the compatible robosuite and Pi0.5
+stack, downloads the LIBERO-Pro scene/object assets, and builds the composite
+assets tree required at runtime. There is no separate editable LIBERO-Pro
+checkout or manual registration patch in the supported workflow.
+See the
+[`VLA_ENV_SETUP.md`](../../../scripts/deployment/VLA_ENV_SETUP.md) guide for
+the version matrix, package-source override, composite-assets contract, and
+known limitations.
 
-### 2.1. LIBERO-PRO repo
+The perception observables (depth + both cameras + hi-res) are unconditional
+once the runner launches with `--libero-type pro`; there is nothing
+perception-specific to install beyond the PRO environment.
 
-Cloned at `${LIBERO_PRO_PATH:-/path/to/LIBERO-PRO}/` from
-`https://github.com/RLinf/LIBERO-PRO.git` and installed editable into the openpi
-venv:
+### 2.1. Verify the installed version
 
 ```bash
-python -m pip show liberopro
-# Name: liberopro  Version: 0.1.0  Location: ${LIBERO_PRO_PATH:-/path/to/LIBERO-PRO}
+"$VENV_ROOT/bin/python" -m pip show rpent-liberopro
+# Name: rpent-liberopro
+# Version: 0.1.1
 ```
 
-### 2.2. Apply the benchmark-registration patch
-
-The upstream `__init__.py` does **not** expose the 16 perturbation suites through
-`get_benchmark()`. Our patch
-[`scripts/liberopro_register_perturbations.patch`](../../../../scripts/liberopro_register_perturbations.patch)
-adds them and overrides `Task.language` to read each BDDL's actual `:language`
-tag (so the perturbed instruction reaches Pi0 / hybrid).
+### 2.2. Verify perturbation registration and data
 
 ```bash
-cd ${LIBERO_PRO_PATH:-/path/to/LIBERO-PRO}
-git apply <repo-root>/scripts/liberopro_register_perturbations.patch
-```
-
-If already applied (likely), `git status -s` shows clean. If you reinstall
-liberopro, re-apply.
-
-### 2.3. Huggingface dataset (authoritative)
-
-The LIBERO-PRO git repo ships **incomplete / broken** init files for several
-perturbation suites (e.g. `libero_spatial_swap` has 0 BDDLs; some
-`libero_spatial_task` `.pruned_init` files are 0 bytes). Treat the git repo as
-unreliable for perturbation data. The full, correct set lives on Huggingface
-([`zhouxueyang/LIBERO-Pro`](https://huggingface.co/datasets/zhouxueyang/LIBERO-Pro)),
-persisted locally at:
-
-```
-${LIBEROPRO_DATASET_PATH:-/path/to/liberopro_hf}/
-├── bddl_files/                    16 perturbation suites, 10 BDDLs each
-└── init_files/                    16 perturbation suites, 10 init files each
-```
-
-Covers `{libero_spatial, libero_object, libero_goal, libero_10} × {swap, task,
-lan, object}`. The installer syncs this into the liberopro install (overwriting
-the broken upstream files); if the persistent copy is gone, re-download with:
-
-```bash
-python -c "
-from huggingface_hub import snapshot_download
-snapshot_download(repo_id='zhouxueyang/LIBERO-Pro', repo_type='dataset',
-                  local_dir='${LIBEROPRO_DATASET_PATH:-/path/to/liberopro_hf}',
-                  allow_patterns=['bddl_files/**','init_files/**'])"
-```
-
-### 2.4. Verify
-
-```bash
-LIBERO_TYPE=pro python -c "
+"$VENV_ROOT/bin/python" -c "
 import liberopro.liberopro.benchmark as bench
 for n in ['libero_spatial_task','libero_spatial_swap','libero_spatial_lan']:
-    b = bench.get_benchmark(n)(); t = b.get_task(0)
+    b = bench.get_benchmark(n)()
+    t = b.get_task(0)
+    assert b.get_num_tasks() > 0
+    assert t.language.strip()
+    assert len(b.get_task_init_states(0)) > 0
     print(f'{n} t0: {t.language!r}  trials={len(b.get_task_init_states(0))}')"
 ```
 
@@ -169,6 +138,10 @@ libero_spatial_task t0: 'Pick the akita black bowl not between the plate and the
 libero_spatial_swap t0: 'Pick the akita black bowl between the plate and the ramekin and place it on the plate'  trials=50
 libero_spatial_lan  t0: 'lift the black bowl between the plate and ramekin and set it on the plate'  trials=50
 ```
+
+If a pinned package artifact fails this check, stop and repair the package
+source or installer. Do not apply an untracked local patch: it makes the
+environment impossible to reproduce.
 
 ## 3. PRO-specific environment gotchas
 
@@ -189,10 +162,10 @@ PRO scenes use one of three table fixtures; the eef home z differs by up to
 **Mandatory check at session start: read `states.json[0].state.robot0_eef_pos[2]`**
 (via `view_driver_state({"step": 0})`). ≈ 0.68 → LIVING_ROOM; ≈ 1.17 → KITCHEN;
 ≈ 0.26 → OBJECT. Pick `pre_pos_z` / `carry_z` / `release_z` accordingly (per-item
-OBJECT-frame altitudes are in
-`resources/libero/memory/project_libero_object_pro_done.md`). Sending a
-wrong-frame z (e.g. KITCHEN coordinates while the env is in LIVING_ROOM frame)
-crashes the env worker (EOFError, silent state loss).
+OBJECT-frame altitudes must be calibrated from the current scene using
+[`env_calibration.md`](./env_calibration.md)). Sending a wrong-frame z (e.g.
+KITCHEN coordinates while the env is in LIVING_ROOM frame) crashes the env
+worker (EOFError, silent state loss).
 
 > **Perception note.** This proprioceptive z is *not* an object coordinate — it's
 > the robot's own pose, which `states.json` still gives you in perception mode.
@@ -234,11 +207,12 @@ slip in the gripper and the object ends up centimetres off target. Mitigation
 
 ### 3.4. Task language is from BDDL, not filename
 
-After the patch, `get_task(i).language` returns the perturbed `:language` tag, and
-the env passes it to Pi0 as the prompt (surfaced to you as
-`states.json[0].task_language`). For `_task` and `_lan` this is the perturbed
-instruction. **Don't override it** — falsifying the VLA's prompt-blindness is the
-point. You read the same language to decide *which* object to localize and place.
+In the supported LIBERO-Pro package, `get_task(i).language` returns the
+perturbed `:language` tag, and the env passes it to Pi0 as the prompt
+(surfaced to you as `states.json[0].task_language`). For `_task` and `_lan`
+this is the perturbed instruction. **Don't override it** — falsifying the VLA's
+prompt-blindness is the point. You read the same language to decide *which*
+object to localize and place.
 
 ### 3.5. ⚠ Swap moves FIXTURES too — and you must localize them visually
 
@@ -246,8 +220,7 @@ This is the biggest perception-mode trap, and it is **specific to `_swap`**. The
 P2 perturbation does not only swap loose objects; for `libero_goal_swap` it swaps
 entire **fixtures** (stove ↔ cabinet ↔ wine_rack), so a goal predicate like
 `On(bowl, flat_stove_1_cook_region)` now points at wherever the *stove* was
-relocated to, and there are no coordinates in `states.json` to read. See
-`resources/libero/memory/feedback_swap_perturbs_fixtures.md`.
+relocated to, and there are no coordinates in `states.json` to read.
 
 In **oracle** mode the documented fix is to read the swap BDDL `:init` block and
 recompute the fixture site's world coordinates. **That is forbidden here** — the
@@ -345,8 +318,8 @@ arrive in your first message):
 {output_dir}/recipe_{recipe_tag}.jsonl   <- exported automatically by the runner
 ```
 
-Do NOT write into `resources/libero/results_*_pert/` — that tree is a **read-only
-seed-0 reference corpus**, not a write target.
+Do not write evaluation artifacts into the repository. Use the run's
+`output_dir` or another external results directory.
 
 ### 4.2. Environment server is runner-owned
 
@@ -425,38 +398,29 @@ perception protocol). Write the audit with `write_text_file` to
   the Object perturbation), not that the cell is unreachable. Re-look, re-pick,
   re-`back_project` before concluding failure.
 
-## 6. Existing corpus
+## 6. Tracked references
 
 ```
 robots/libero/guides/
 ├── pro_hybrid_guide.md                 <- this file
 ├── strict_hybrid_guide.md              <- perception protocol + Rules (source of truth)
 └── env_calibration.md                  <- OSC frame bounds + safe altitudes
-scripts/
-└── liberopro_register_perturbations.patch
-resources/libero/memory/                <- MEMORY.md index + feedback_*/project_* notes
-resources/libero/results_spatial_pert/  <- read-only seed-0 reference corpus
-resources/libero/results_{object,goal,10}_pert/   <- same, other suites (seed-0)
+scripts/deployment/
+├── install_vla_env.sh                  <- supported environment installer
+└── VLA_ENV_SETUP.md                    <- versions, compatibility fixes, verification
 ```
 
-Before you start, **read the auto-memory**: `resources/libero/memory/MEMORY.md`
-(one-line hooks, auto-injected via CLAUDE.md). For perception PRO cells always
-open `feedback_no_teleport_rule.md` and — for any `_swap` cell —
-`feedback_swap_perturbs_fixtures.md` (what swaps, and why you re-find the
-relocated fixture visually). For bowl→plate spatial tasks also read
-`feedback_bowl_eef_y_offset.md`; for cluttered picks, `feedback_pi0_pick_full_prompt.md`;
-after two failed retries, `feedback_failure_forensics.md`. The
-`resources/libero/results_*_pert/` recipes are **inputs** (technique priors) —
-consult them for prompt ladders, staging, and target zones, but never reuse their
-coordinates (re-derive every xyz from THIS scene) and never write there.
+Historical experiment memories and result corpora are not distributed in this
+repository. If a deployment supplies them externally, treat them only as
+technique priors: never reuse saved coordinates, and never write new results
+into the source checkout.
 
 ## 7. What to do next (priority order)
 
 1. **Extend spatial to all 10 tasks at seed 0**, four perception cells each
-   (base / `_task` / `_swap` / `_lan`). For hybrid runs, use the seed-0 reference
-   recipes in `resources/libero/results_spatial_pert/` as *technique* starting
-   points — the pick step is usually identical; the place target changes for
-   `_swap`, the target object changes for `_task`. Never reuse their coordinates.
+   (base / `_task` / `_swap` / `_lan`). The pick step is usually identical;
+   the place target changes for `_swap`, and the target object changes for
+   `_task`. Re-localize every entity in the current scene.
 2. **Scale to seeds beyond 0** (50 trials per task). Recipes must re-localize per
    scene; a perception recipe is *data-flow* (perceive → plan → act), never
    hard-coded xyz.
@@ -477,7 +441,7 @@ LIBERO_TYPE=pro python -c \
   "import liberopro.liberopro.benchmark as b; print(b.get_benchmark('libero_spatial_task')().get_task(0).language)"
 # -> must read 'Pick the akita black bowl not between ...' (the perturbed text)
 
-# 2. Read the auto-memory: resources/libero/memory/MEMORY.md
+# 2. Read strict_hybrid_guide.md and env_calibration.md
 
 # 3. Launch a perception cell (runner owns env_server; single-attempt)
 python zetta/cli/main.py --env libero --suite libero_spatial_swap --task <N> --seed 0 \
@@ -498,5 +462,5 @@ Then, inside the run:
 When in doubt about *how to localize* or a primitive, the source of truth is
 [`strict_hybrid_guide.md`](./strict_hybrid_guide.md); about *PRO setup /
 perturbation semantics*, see
-[`scripts/install_libero_pro_plus.sh`](../../../../scripts/install_libero_pro_plus.sh)
-and §2.
+[`install_vla_env.sh`](../../../scripts/deployment/install_vla_env.sh), the
+[`VLA setup guide`](../../../scripts/deployment/VLA_ENV_SETUP.md), and §2.

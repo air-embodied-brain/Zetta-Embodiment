@@ -147,6 +147,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     MUJOCO_GL=egl \
     PYOPENGL_PLATFORM=egl \
+    LIBERO_CONFIG_PATH=/workspace/.liberopro-config \
     NVIDIA_DRIVER_CAPABILITIES=all
 
 # ---------------------------------------------------------------------------
@@ -193,8 +194,13 @@ RUN pip install "mujoco==${MUJOCO_VERSION}"
 #    step is shared again.
 # ---------------------------------------------------------------------------
 RUN if [ "$TRACK" = "libero-pro" ]; then \
-        pip install --no-deps "liberopro==${LIBEROPRO_VERSION}" && \
-        pip install "robosuite>=1.4,<1.5" bddl cloudpickle gym h5py imageio opencv-python termcolor && \
+        pip install --no-deps "rpent-liberopro==${LIBEROPRO_VERSION}" && \
+        pip install \
+          "numpy>=1.22,<2" \
+          "opencv-python<4.12" \
+          "robosuite>=1.4,<1.5" \
+          "matplotlib>=3.5.3" \
+          bddl cloudpickle easydict filelock gym h5py huggingface-hub imageio pyyaml termcolor tqdm && \
         python -c "\
 import robosuite; \
 assert robosuite.__version__.startswith('1.4.'), \
@@ -293,12 +299,14 @@ RUN if [ "$TRACK" = "libero-pro" ]; then \
         pip install "rlinf-openpi==${RLINF_OPENPI_VERSION}"; \
     fi
 
-# The OpenPI distribution is the sole allowed RLinf-named distribution. The
-# runtime itself must never pull in the main framework or environment forks.
+# Only the OpenPI distribution and its required transformer fork are allowed
+# to use an RLinf name. The runtime must never pull in the main framework or
+# environment forks such as rlinf-libero.
 RUN python -c "\
 from importlib.metadata import distributions; \
 names={str(d.metadata.get('Name','')).lower() for d in distributions()}; \
-bad=sorted(n for n in names if n == 'rlinf' or (n.startswith('rlinf-') and n != 'rlinf-openpi')); \
+allowed={'rlinf-openpi','rlinf-transformer-openpi'}; \
+bad=sorted(n for n in names if (n == 'rlinf' or n.startswith('rlinf-')) and n not in allowed); \
 assert not bad, f'forbidden RLinf distributions installed: {bad}'"
 
 # Bug fix (see VLA_ENV_SETUP.md "Bug 1", libero-pro only): rlinf-openpi's
@@ -358,7 +366,7 @@ RUN pip install "pydantic==${PYDANTIC_VERSION}"
 #        ``pip install -e .`` the project itself (see step 5's comment), so
 #        none of ``pyproject.toml``'s base ``dependencies`` land in the image
 #        by any other path.
-#      - mcp/pydantic-ai-slim/claude-agent-sdk/openai-codex/huggingface_hub/
+#      - mcp/pydantic-ai-slim/claude-agent-sdk/huggingface_hub/
 #        prompt-toolkit/imageio are the remaining base ``dependencies`` (the
 #        Role1/Codex agent layer used by ``prepare_*_campaign.py``'s
 #        generated rollout commands and ``zetta.evolution.cli``). They are
@@ -400,8 +408,11 @@ RUN pip install \
 RUN pip install --no-deps \
         "mcp>=1.27,<2" \
         "pydantic-ai-slim[anthropic,openai]>=2.1" \
-        "claude-agent-sdk>=0.1.60" \
-        "openai-codex>=0.1.0b3"
+        "claude-agent-sdk>=0.1.60"
+
+# openai-codex currently requires Python >=3.11, while the simulator image is
+# intentionally pinned to the validated Python 3.10 ABI. API/Claude planners remain
+# available in this image; run the Codex planner in a separate Python >=3.11 process.
 
 # Re-assert the GR00T-compatible pydantic pin: the ``--no-deps`` group above
 # does not touch it, but pin it back explicitly so a future edit to this

@@ -35,7 +35,7 @@ dependencies = [
     "msgpack>=1.0",
     "mcp>=1.27,<2",
     "claude-agent-sdk>=0.1.60",
-    "openai-codex>=0.1.0b3",
+    "openai-codex>=0.1.0b3; python_version >= '3.11'",
     "huggingface_hub>=0.24",
     "prompt-toolkit>=3.0.48",
     "numpy",
@@ -59,6 +59,13 @@ test = [
     "omegaconf>=2.3,<3",
     "imageio-ffmpeg>=0.5,<1",
     "scipy>=1.10,<2",
+    "zetta[runtime]",
+]
+runtime = [
+    "gym==0.26.2",
+    "gymnasium>=1.1,<2",
+    "prometheus-client>=0.20,<1",
+    "torch>=2.4,<3",
 ]
 ray = [
     "ray",
@@ -78,7 +85,7 @@ libero = []
 libero-pro = []
 libero-plus = []
 full = [
-    "zetta[ray,openpi,libero-pro,sam3,cosmos-lite]",
+    "zetta[runtime,ray,openpi,libero-pro,sam3,cosmos-lite]",
 ]
 sam3 = [
     "sam3==0.1.4",
