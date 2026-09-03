@@ -1431,13 +1431,14 @@ def _candidate_feature_contract(
     parent_bundle: CandidateBundle | None,
     trajectories: tuple[tuple[EpisodeRecord, Path], ...],
 ) -> dict[str, Any]:
-    """Check that every candidate Critic rule is evaluable on replay states.
+    """Classify whether candidate Critic rules can use immutable replay states.
 
-    A feature can exist somewhere in a trajectory while still being absent from
-    every action decision state (the Gen0 LIBERO reset/action split is one such
-    case).  Shadow replay cannot safely forward-fill that value, so require the
-    rule feature and all activation predicates to co-occur in at least one state
-    row for every trajectory used by the replay.
+    The rule feature and all activation predicates must co-occur at least once
+    in every trajectory.  Later omissions make replay incomplete rather than
+    making the candidate invalid: legacy chunked ledgers can log ``privileged``
+    features only at chunk boundaries even though the live Critic receives them
+    on every action.  Shadow replay must not forward-fill those missing values;
+    incomplete replay is retained as inconclusive evidence for the online gate.
     """
 
     parent_ids = (
@@ -1476,12 +1477,11 @@ def _candidate_feature_contract(
                 row_features.append(names)
                 all_features.update(names)
         unavailable_rules: dict[str, list[str]] = {}
+        suffix_incomplete_rules: dict[str, list[str]] = {}
         for rule_id, required in required_by_rule.items():
             # Shadow replay may skip a reset-only prefix until the first state
-            # where a rule is evaluable, but TemporalCritic then evaluates every
-            # subsequent row.  Require that suffix to remain complete; merely
-            # seeing each field once is insufficient and would let a sparse
-            # privileged feature crash replay midway through a trajectory.
+            # where a rule is evaluable.  A rule that is never jointly
+            # observable cannot be tested at all and remains ineligible.
             first_evaluable = next(
                 (
                     index
@@ -1490,17 +1490,20 @@ def _candidate_feature_contract(
                 ),
                 None,
             )
-            missing_after_first = (
-                set().union(
-                    *(required - names for names in row_features[first_evaluable:])
-                )
-                if first_evaluable is not None
-                else set(required)
+            if first_evaluable is None:
+                unavailable_rules[rule_id] = sorted(required)
+                continue
+            missing_after_first = set().union(
+                *(required - names for names in row_features[first_evaluable:])
             )
-            if first_evaluable is None or missing_after_first:
-                unavailable_rules[rule_id] = sorted(missing_after_first)
-        # Keep the report seed-blind while distinguishing a typo from a sparse
-        # feature that disappears after replay has started.
+            if missing_after_first:
+                # Sparse suffixes are usable by the live Critic but cannot
+                # support a conclusive replay result.  Record that limitation
+                # without rejecting the scientific candidate.
+                suffix_incomplete_rules[rule_id] = sorted(missing_after_first)
+        replay_complete = not unavailable_rules and not suffix_incomplete_rules
+        # Keep the report seed-blind while distinguishing a typo or split-row
+        # predicate from a sparse feature that disappears after replay starts.
         trajectory_reports.append(
             {
                 "trajectory_sha256": file_sha256(path),
@@ -1509,6 +1512,15 @@ def _candidate_feature_contract(
                 "unavailable_feature_names": sorted(
                     {name for values in unavailable_rules.values() for name in values}
                 ),
+                "suffix_incomplete_rule_ids": sorted(suffix_incomplete_rules),
+                "suffix_missing_feature_names": sorted(
+                    {
+                        name
+                        for values in suffix_incomplete_rules.values()
+                        for name in values
+                    }
+                ),
+                "replay_complete": replay_complete,
             }
         )
     unsupported = sorted(
@@ -1520,14 +1532,20 @@ def _candidate_feature_contract(
         }
     )
     unavailable = any(row["unavailable_rule_ids"] for row in trajectory_reports)
+    suffix_incomplete = any(
+        row["suffix_incomplete_rule_ids"] for row in trajectory_reports
+    )
+    eligible = bool(trajectories) and not unsupported and not unavailable
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "delta_rule_ids": sorted(required_by_rule),
         "trajectory_count": len(trajectory_reports),
         "feature_schema_sha256": canonical_sha256(sorted(all_features)),
         "unsupported_feature_names": unsupported,
         "trajectory_reports": trajectory_reports,
-        "eligible": bool(trajectories) and not unsupported and not unavailable,
+        "replay_complete": eligible and not suffix_incomplete,
+        "requires_online_validation": eligible and suffix_incomplete,
+        "eligible": eligible,
     }
 
 
@@ -3267,12 +3285,14 @@ def _diagnosis_cluster_id(store: CampaignStore, diagnosis_sha256: str) -> str:
 def _rejected_candidates_for_cluster(
     store: CampaignStore, cluster_id: str
 ) -> tuple[str, ...]:
-    """Return unique candidates rejected by preflight or a conclusive gate.
+    """Return candidates rejected by scientific preflight or a conclusive gate.
 
     The five-round bound applies to candidate hypotheses, not merely to the
     first same-seed screen. A candidate that passes same-seed but later fails
     regression or heldout validation has still consumed one refinement round
-    for this cluster and must not create an unbounded PROPOSE loop.
+    for this cluster and must not create an unbounded PROPOSE loop. A trajectory
+    feature-contract rejection is an audited instrumentation failure, not a
+    test of the hypothesis, so it does not consume this scientific budget.
     """
 
     rejected: set[str] = set()
@@ -3290,7 +3310,11 @@ def _rejected_candidates_for_cluster(
         if _diagnosis_cluster_id(store, str(bundle["diagnosis_sha256"])) == cluster_id:
             rejected.add(candidate_sha256)
     for rejection in _shadow_candidate_rejections(store):
-        if rejection.get("cluster_id") == cluster_id:
+        if (
+            rejection.get("cluster_id") == cluster_id
+            and rejection.get("rejection_kind")
+            != "trajectory_feature_contract_rejection"
+        ):
             rejected.add(str(rejection["candidate_sha256"]))
     for rejection in _operator_candidate_rejections(store):
         if rejection.get("cluster_id") == cluster_id:
@@ -3306,7 +3330,9 @@ def _all_rejected_candidates(store: CampaignStore) -> set[str]:
         and not (row.get("kind") == "heldout_10" and not row.get("conclusive"))
     }
     rejected.update(
-        str(row["candidate_sha256"]) for row in _shadow_candidate_rejections(store)
+        str(row["candidate_sha256"])
+        for row in _shadow_candidate_rejections(store)
+        if row.get("rejection_kind") != "trajectory_feature_contract_rejection"
     )
     rejected.update(
         str(row["candidate_sha256"])
@@ -4537,6 +4563,13 @@ def _run_proposal_stage_locked(
         target_records=tuple(target_records),
         success_controls=tuple(success_controls),
     )
+    shadow_report["feature_contract"] = feature_contract
+    if feature_contract["requires_online_validation"]:
+        # A sparse ledger can produce useful observations, but absence on later
+        # rows means replay cannot prove the Critic's full-trajectory behavior.
+        # Preserve the partial evidence and require the live same-seed gate.
+        shadow_report["preflight_conclusive"] = False
+        shadow_report["passed_detection_preflight"] = False
     shadow_report["target_selection"] = shadow_target_mode
     shadow_report["live_gate_admission"] = _shadow_live_gate_admission(
         store, shadow_report
