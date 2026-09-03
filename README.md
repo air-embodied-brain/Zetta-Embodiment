@@ -12,7 +12,7 @@ Zetta is an efficient closed-loop embodied harness for self-evolving physical in
 - [√] **August 19, 2026:** Open-source Z-Infra with LIBERO support.
 - [√] **August 20, 2026:** Add RoboCasa support.
 - [√] **August 27, 2026:** Add NVIDIA Cosmos model support.
-- [ ] **September 3, 2026:** Add RoboTwin environment support.
+- [√] **September 3, 2026:** Add RoboTwin environment support.
 - [ ] **September 10, 2026:** Add ManiSkill environment support.
 - [ ] **September 17, 2026:** Add BEHAVIOR environment support.
 - [ ] **Ongoing:** Expand model and environment coverage at an approximate cadence of one integration per week.
@@ -44,8 +44,8 @@ Runtime role boundaries:
 | Path | Purpose |
 |---|---|
 | `zetta/evolution/` | Immutable manifests, queues, clustering, stages, gates, promotion, and supervision |
-| `rollout_runtime/` | The Rollout Runtime: Gateway, EnvWorker/RolloutWorker groups, and backends for LIBERO/RoboCasa/ManiSkill |
-| `robots/libero/`, `robots/robocasa/` | Env clients, Role1/Critic/Recovery, tools, and rendering contracts |
+| `rollout_runtime/` | The Rollout Runtime: Gateway, EnvWorker/RolloutWorker groups, and backends for LIBERO/RoboCasa/ManiSkill/RoboTwin |
+| `robots/libero/`, `robots/robocasa/`, `robots/robotwin/` | Env clients, Role1/Critic/Recovery, tools, and rendering contracts |
 | `scripts/evolution/` | Campaign preparation, workers, capacity probes, and plots |
 | `scripts/deployment/` | Service start/stop, VLA env install, and Docker build helpers |
 | `tests/` | Unit/contract tests; the minimal set requires no simulator or model |
@@ -114,6 +114,35 @@ python -m robocasa.scripts.setup_macros              # set up system variables
 python -m robocasa.scripts.download_kitchen_assets   # downloads ~10GB of kitchen assets
 ```
 
+**RoboTwin 2.0 + Pi0.5**
+
+RoboTwin is SAPIEN-based and cannot share a venv with either track above. Use the
+upstream RLinf image rather than building one:
+
+```bash
+git clone https://github.com/RoboTwin-Platform/RoboTwin.git -b RLinf_support
+# then download ~15GB of assets into its assets/ directory
+
+docker run --rm --gpus all --shm-size 32g \
+  -e NVIDIA_DISABLE_REQUIRE=1 \
+  -e NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics \
+  -e LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/usr/local/cuda/lib64 \
+  --device /dev/dri \
+  -v "$ROBOTWIN_ROOT":/workspace/RoboTwin \
+  -v "$REPO_ROOT":/workspace/Zetta \
+  --entrypoint /bin/bash rlinf/rlinf:agentic-rlinf0.4-robotwin
+```
+
+The image ships three venvs under `/opt/venv/`; this repository uses `openpi`.
+The three environment variables let a CUDA 12.8 image run on a 12.4 driver:
+`NVIDIA_DISABLE_REQUIRE` skips the image's `cuda>=12.8` label check,
+`NVIDIA_DRIVER_CAPABILITIES` drops the `display` capability that needs a
+`/dev/nvidia-modeset` a headless host does not have, and `LD_LIBRARY_PATH` puts
+the host driver's `libcuda` ahead of the image's forward-compatibility libraries
+-- CUDA forward compatibility is datacenter-only and fails on GeForce with
+`Error 804`. `assets_path` must point at the RoboTwin repository root, not its
+`assets/` subdirectory.
+
 Prebuilt Docker images, built from `scripts/deployment/Dockerfile.vla-env`, are available for both tracks so you can skip the manual venv build:
 
 - **LIBERO-Pro** image: preconfigured with the LIBERO-Pro simulator stack and Pi0.5 dependencies. [百度网盘](https://pan.baidu.com/s/1HW7AstjCLE_BTScRFOQT2g?pwd=qv7c)
@@ -136,7 +165,17 @@ python -m rollout_runtime.cli serve \
 
 ## Preparing and Running a Campaign
 
-Both LIBERO and RoboCasa use the same two-step flow: `prepare_*_campaign.py` freezes a `manifest.json`/`tool-catalog.json` against a running runtime, then `run_campaign.py` drives the campaign state machine to completion.
+LIBERO, RoboCasa and RoboTwin all use the same two-step flow: `prepare_*_campaign.py` freezes a `manifest.json`/`tool-catalog.json` against a running runtime, then `run_campaign.py` drives the campaign state machine to completion.
+
+RoboTwin differs in two ways that its manifest records explicitly. Its seeds come
+from RoboTwin's curated per-task success-seed list rather than a dense integer
+range -- the environment picks its scene from the seed outright, so a held-out
+block drawn from unsolvable scenes would not be a gate -- and its evidence is
+chunk-granular rather than per-step, because it is the only `final_only` family.
+
+The RoboTwin campaign loop runs end to end on hardware: rollouts, Cluster,
+Diagnose, Stage 2, and the paired same-seed gate, over five candidate rounds to a
+`complete` campaign.
 
 ```bash
 # 1. Start the runtime (see above), then prepare the campaign against it.

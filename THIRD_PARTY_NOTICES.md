@@ -29,6 +29,9 @@ Zetta includes selectively adapted files from the Apache-2.0 licensed
   `zetta/envs/libero/`
 - `rlinf/envs/maniskill/maniskill_env.py` and `rlinf/envs/maniskill/utils.py` →
   `zetta/envs/maniskill/`
+- `rlinf/envs/robotwin/robotwin_env.py` and `rlinf/envs/robotwin/seed_utils.py`,
+  plus the `center_crop_image`/`crop_and_resize` helpers from
+  `rlinf/envs/utils.py` → `zetta/envs/robotwin/`
 - `rlinf/models/embodiment/openpi/` → `zetta/policies/openpi/`
 - `rlinf/models/embodiment/base_policy.py`, the OpenPI-referenced files in
   `rlinf/models/embodiment/modules/`, `rlinf/utils/{nested_dict_process,pytree,rot6d}.py`,

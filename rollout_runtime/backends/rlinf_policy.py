@@ -149,6 +149,12 @@ class RlinfPolicyConfig:
         dtype: Compute precision name; ``None`` means infer from ``precision``.
         unnorm_key: Action denormalization key (needed for openvla family;
             ignored by openpi).
+        stack_wrist_views: Whether to re-stack ``wrist_images`` and
+            ``extra_view_images`` into one ``[B, N_IMG, H, W, C]`` tensor before
+            the forward pass. Required by the ALOHA pipeline, which reads the
+            left and right wrist as ``wrist_images[0]`` / ``wrist_images[1]``
+            and ignores ``extra_view_image`` entirely; see
+            :func:`_stack_wrist_views`.
     """
 
     model_type: str = "openpi"
@@ -187,6 +193,7 @@ class RlinfPolicyConfig:
     device: str = "cuda"
     dtype: str | None = None
     unnorm_key: str = ""
+    stack_wrist_views: bool = False
 
     @classmethod
     def from_mapping(cls, config: Mapping[str, Any] | None) -> RlinfPolicyConfig:
@@ -555,6 +562,8 @@ class RlinfPolicyCore:
                     f"{index}; compat_key should have separated them"
                 )
         env_obs = observations_to_env_output(observations)
+        if self.config.stack_wrist_views:
+            env_obs = _stack_wrist_views(env_obs)
         instructions = list(env_obs["task_descriptions"])
         for index, request in enumerate(requests):
             if request.instruction_override:
@@ -619,6 +628,53 @@ class RlinfPolicyCore:
                 model_type=self.config.model_type,
             ),
         )
+
+
+def _stack_wrist_views(env_obs: dict[str, Any]) -> dict[str, Any]:
+    """Re-stack the wrist views into the single ``[B, N_IMG, H, W, C]`` tensor.
+
+    The rlinf 5-key schema allows ``wrist_images`` to be either
+    ``[N_ENV, H, W, C]`` or ``[N_ENV, N_IMG, H, W, C]``
+    (``rlinf/data/schema/embodied_types.py::prepare_observations``), and the
+    ALOHA pipeline **requires** the second form: ``aloha_policy._decode_aloha``
+    indexes ``wrist_images[0]`` as the left wrist and ``wrist_images[1]`` as the
+    right one, and never reads ``observation/extra_view_image`` at all.
+
+    The Runtime's ``Observation`` cannot carry that form -- ``wrist_image`` is a
+    single ``PayloadRef`` -- so a bimanual family splits its two wrists across
+    ``wrist_image`` (left) and ``extra_view_images[0]`` (right), and this
+    function is the exact inverse, applied just before the model sees the batch.
+    The split and this re-stack are a matched pair; changing one without the
+    other silently feeds the model a mangled wrist tensor rather than raising
+    (RoboTwin's first hardware run produced a
+    ``expected input[2, 224, 224, 224] to have 3 channels`` deep inside the
+    vision tower).
+
+    A no-op when there is nothing to stack, so it is safe to leave enabled for a
+    single-wrist configuration.
+
+    Args:
+        env_obs: The five-key batch dict from ``observations_to_env_output``.
+
+    Returns:
+        A shallow copy with ``wrist_images`` stacked and ``extra_view_images``
+        cleared; the input unchanged when either view is absent.
+    """
+    wrist = env_obs.get("wrist_images")
+    extra = env_obs.get("extra_view_images")
+    if wrist is None or extra is None:
+        return env_obs
+    wrist_array = np.asarray(wrist)
+    extra_array = np.asarray(extra)
+    if wrist_array.ndim == 4:
+        # [B, H, W, C] -> [B, 1, H, W, C]
+        wrist_array = wrist_array[:, None, ...]
+    if extra_array.ndim == 4:
+        extra_array = extra_array[:, None, ...]
+    stacked = dict(env_obs)
+    stacked["wrist_images"] = np.concatenate([wrist_array, extra_array], axis=1)
+    stacked["extra_view_images"] = None
+    return stacked
 
 
 def _pad_batch(array: np.ndarray, batch_size: int) -> np.ndarray:

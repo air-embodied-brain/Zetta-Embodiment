@@ -1570,7 +1570,7 @@ def _active_stage1_context(store: CampaignStore) -> dict[str, Any]:
                 )
                 if accepted_path.is_file() and canonical_sha256(
                     read_json(accepted_path)
-                ) != canonical_sha256(output):
+                ) != canonical_sha256(_normalized_stage1_output(output)):
                     raise ValueError("Stage1 output differs from accepted diagnosis")
         return context
     return {}
@@ -3373,6 +3373,35 @@ def _advance_after_candidate_rejection(
         "candidate_round": len(rejected),
         "optimization_outcome": "no_candidate_passed_primary_or_secondary",
     }
+
+
+def _normalized_stage1_output(output: dict[str, Any]) -> dict[str, Any]:
+    """Put a raw Stage1 output into the shape the accepted diagnosis is stored in.
+
+    ``output.json`` is the planner's raw JSON (``stages.py`` writes
+    ``_extract_json_object`` verbatim), while the accepted diagnosis is
+    ``CausalDiagnosis.as_dict()``, which drops ``visual_evidence`` and
+    ``task_contract`` when they hold their defaults so historical digests stay
+    stable.  Digesting the two directly therefore diverges whenever the model
+    spells out a default-valued field: a real campaign emitted
+    ``"task_contract": {}``, every other field matched byte for byte, and the run
+    stalled at PROPOSE with the diagnosis already accepted and written.
+
+    Normalising through the model preserves the invariant -- a semantic
+    difference in any field still mismatches -- without letting that spelling
+    decide the outcome.
+    """
+
+    try:
+        return _diagnosis(output).as_dict()
+    except (TypeError, ValueError) as exc:
+        # An output that cannot form a diagnosis at all cannot be the one that
+        # was accepted; surface it as the mismatch it is, not as a TypeError
+        # escaping from a consistency check.
+        raise ValueError(
+            "Stage1 output differs from accepted diagnosis: the recorded output "
+            f"is not a valid diagnosis ({exc})"
+        ) from exc
 
 
 def _diagnosis(value: dict[str, Any]) -> CausalDiagnosis:
