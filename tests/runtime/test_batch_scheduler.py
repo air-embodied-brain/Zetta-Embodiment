@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import threading
 from typing import Any
 
 import pytest
@@ -36,6 +37,41 @@ from rollout_runtime.workers.rollout_worker import RuntimeRolloutWorker
 
 ROUTE = make_routing_token("env", 0)
 """Response routing token shared by all test cases."""
+
+
+class _BlockingSyncPolicy(FakePolicyCore):
+    """Synchronous single-device core whose batches stay blocked until released."""
+
+    ainfer_batch = None
+
+    def __init__(self) -> None:
+        super().__init__(FakePolicyConfig())
+        self.started_batch_sizes: list[int] = []
+        self.first_batch_started = threading.Event()
+        self.release_batches = threading.Event()
+        self._record_lock = threading.Lock()
+
+    def infer_batch(self, requests: list[InferenceRequest]) -> Any:
+        with self._record_lock:
+            self.started_batch_sizes.append(len(requests))
+            self.first_batch_started.set()
+        if not self.release_batches.wait(timeout=5.0):
+            raise TimeoutError("test did not release the blocked inference batch")
+        return super().infer_batch(requests)
+
+
+class _BlockedResponseChannel(InProcInferenceChannel):
+    """Hold response delivery so the test can observe the inference gate."""
+
+    def __init__(self) -> None:
+        super().__init__(request_queue_size=32, response_queue_size=32)
+        self.response_started = asyncio.Event()
+        self.release_responses = asyncio.Event()
+
+    async def put_response_nowait(self, routing_token: str, response: Any) -> None:
+        self.response_started.set()
+        await self.release_responses.wait()
+        await super().put_response_nowait(routing_token, response)
 
 
 def make_pending(
@@ -395,6 +431,122 @@ async def test_execute_batches_really_coalesces() -> None:
         assert worker.scheduler.batch_count <= 4, "requests were not coalesced at all"
         assert policy.batch_calls == worker.scheduler.batch_count
     finally:
+        await worker.stop()
+        channel.close()
+        task.cancel()
+        with contextlib.suppress(BaseException):
+            await task
+
+
+async def test_busy_sync_policy_keeps_next_batch_mergeable() -> None:
+    """A local accelerator must finish its active batch before freezing the next.
+
+    The first batch is held inside a synchronous policy core while eight more
+    compatible requests arrive. They must remain queued as one mergeable batch,
+    rather than entering eight concurrent ``to_thread`` calls.
+    """
+    channel = InProcInferenceChannel(request_queue_size=32, response_queue_size=32)
+    policy = _BlockingSyncPolicy()
+    worker = RuntimeRolloutWorker(
+        policy=policy,
+        scheduler_config=SchedulerConfig(
+            max_batch_size=8,
+            max_wait_ms=10.0,
+            max_inflight_per_application=32,
+            max_inflight_per_session=1,
+        ),
+        max_concurrent_inferences=16,
+    )
+    channel.register_route(ROUTE)
+    task = await _serve(worker, channel)
+    try:
+        await channel.put_request_nowait(
+            make_pending(session_id="active", step_index=0).request
+        )
+        assert await asyncio.to_thread(policy.first_batch_started.wait, 1.0)
+
+        for index in range(8):
+            await channel.put_request_nowait(
+                make_pending(session_id=f"queued-{index}", step_index=index + 1).request
+            )
+        for _ in range(200):
+            if worker.received_count == 9:
+                break
+            await asyncio.sleep(0.005)
+        assert worker.received_count == 9
+
+        # Wait beyond max_wait_ms. A second synchronous batch must not have been
+        # removed from the scheduler while the first one still owns the device.
+        await asyncio.sleep(0.025)
+        assert policy.started_batch_sizes == [1]
+        assert worker.scheduler.batch_count == 1
+        assert worker.scheduler.queue_depth == 8
+        assert worker.inflight == 1
+
+        policy.release_batches.set()
+        for _ in range(200):
+            if worker.responded_count == 9:
+                break
+            await asyncio.sleep(0.005)
+        assert worker.responded_count == 9
+        assert policy.started_batch_sizes == [1, 8]
+        assert worker.scheduler.batch_count == 2
+    finally:
+        policy.release_batches.set()
+        await worker.stop()
+        channel.close()
+        task.cancel()
+        with contextlib.suppress(BaseException):
+            await task
+
+
+async def test_sync_inference_gate_does_not_wait_for_response_delivery() -> None:
+    """Slow response I/O may overlap the next batch, but sync inference may not."""
+    channel = _BlockedResponseChannel()
+    policy = _BlockingSyncPolicy()
+    policy.release_batches.set()
+    worker = RuntimeRolloutWorker(
+        policy=policy,
+        scheduler_config=SchedulerConfig(
+            max_batch_size=2,
+            max_wait_ms=50.0,
+            max_inflight_per_application=32,
+            max_inflight_per_session=1,
+        ),
+        max_concurrent_inferences=16,
+    )
+    channel.register_route(ROUTE)
+    task = await _serve(worker, channel)
+    try:
+        for index in range(4):
+            await channel.put_request_nowait(
+                make_pending(
+                    session_id=f"response-gate-{index}", step_index=index
+                ).request
+            )
+
+        await asyncio.wait_for(channel.response_started.wait(), timeout=1.0)
+        for _ in range(200):
+            with policy._record_lock:
+                started = list(policy.started_batch_sizes)
+            if len(started) == 2:
+                break
+            await asyncio.sleep(0.005)
+
+        # The GPU-side calls remain sequential, but response delivery from batch 1
+        # does not prevent the second batch from entering synchronous inference.
+        assert started == [2, 2]
+        assert worker.scheduler.batch_count == 2
+
+        channel.release_responses.set()
+        for _ in range(200):
+            if worker.responded_count == 4:
+                break
+            await asyncio.sleep(0.005)
+        assert worker.responded_count == 4
+    finally:
+        channel.release_responses.set()
+        policy.release_batches.set()
         await worker.stop()
         channel.close()
         task.cancel()
