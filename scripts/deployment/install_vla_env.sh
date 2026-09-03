@@ -547,3 +547,5 @@ fi
 echo
 echo "Known limitation: the libero-pro and robocasa tracks cannot be installed in the same venv state" \
      "because their robosuite versions conflict at the code level. See the Known Limitations section in VLA_ENV_SETUP.md."
+echo "RoboTwin is a third, separately isolated environment: it is SAPIEN-based rather than robosuite-based," \
+     "so this script does not build it. Use the upstream RLinf image instead; see docs/robotwin.md."

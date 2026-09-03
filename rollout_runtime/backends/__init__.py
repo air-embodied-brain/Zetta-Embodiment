@@ -8,12 +8,11 @@ never modified**. ``robocasa_current`` / ``groot_policy`` do not touch rlinf
 at all; they depend only on the current branch's
 ``robots.robocasa.session_core`` / ``groot_core``.
 
-Landing order: ``fake`` -> ``libero`` -> ``maniskill``. The originally
-planned fourth step was ``robotwin`` (the only all-rlinf family that is
-``final_only``, useful for exercising the ``obs_list`` length normalization),
-but its package does not exist in any of the verified runtime images, so it
-remains "declared but not implemented" (see the runtime validation notes for
-details).
+Landing order: ``fake`` -> ``libero`` -> ``maniskill`` -> ``robocasa`` ->
+``robotwin``. ``robotwin`` is the only ``final_only`` family and therefore the
+one that actually exercises the ``obs_list`` length normalization; its adapter
+is ``rlinf_robotwin.py``, driving the vendored
+``zetta.envs.robotwin.environment.RoboTwinEnv``.
 
 The ``robocasa`` family, as part of the Rollout Runtime v3 migration, switches
 to the current branch's ``RoboCasaSession``/GR00T business logic; the source
@@ -41,18 +40,18 @@ __all__ = [
     "register_env_family_for",
 ]
 
-ENV_BACKENDS = ("fake", "libero", "maniskill", "robocasa")
+ENV_BACKENDS = ("fake", "libero", "maniskill", "robocasa", "robotwin")
 """Env families that actually have an adapter in this build.
 
-``robotwin`` **has a declaration in ``ENV_FAMILY_BEHAVIORS`` but no
-adapter**: its ``robotwin`` package does not exist in any verified runtime
-image, so it remains "declared but not implemented," and
-``get_env_family`` returns an explicit ``UNSUPPORTED_ENV_SPEC`` with
-``declared=True``.
+Every family declared in ``ENV_FAMILY_BEHAVIORS`` now ships an adapter. The
+"declared but not implemented" path in ``get_env_family`` is still live -- it
+is what a future declaration-first family would hit -- but nothing takes it
+today.
 
-``robocasa`` is likewise not yet registered here: a new
-``robocasa_current.py`` (``EnvExecutionCore``, wrapping the current branch's
-``RoboCasaSession``) will be added later.
+``robotwin`` additionally needs the ``robotwin`` package and its ~30 GB asset
+bundle at **run** time; that is a deployment prerequisite, not a build one, so
+the family is registered unconditionally and a missing package surfaces as an
+``ENV_FAILURE`` from ``build`` rather than as a missing family.
 """
 
 POLICY_BACKENDS = ("fake", "zetta_openpi", "groot", "cosmos_lite")
@@ -92,6 +91,12 @@ def register_env_family_for(env_family: str) -> Any:
         )
 
         return register_robocasa_current_env_family(replace=True)
+    if env_family == "robotwin":
+        from rollout_runtime.backends.rlinf_robotwin import (
+            register_robotwin_env_family,
+        )
+
+        return register_robotwin_env_family(replace=True)
     raise RuntimeApiError(
         make_error(
             ErrorCode.UNSUPPORTED_ENV_SPEC,

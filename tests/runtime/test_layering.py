@@ -47,6 +47,7 @@ RUNTIME_INJECTION_POINTS = frozenset(
         "robots/libero/__init__.py",
         "robots/libero/run_evolution_rollout.py",
         "robots/robocasa/run_rollout.py",
+        "robots/robotwin/run_rollout.py",
     }
 )
 """The only files on the zetta / robots side allowed to ``import rollout_runtime``.
@@ -54,6 +55,10 @@ RUNTIME_INJECTION_POINTS = frozenset(
 - ``robots/libero/__init__.py``: the libero family's ``--runtime rollout`` CLI
   switch and ``_init_rollout_runtime``, which does not change the
   ``--runtime legacy`` default path.
+- ``robots/robotwin/run_rollout.py``: the sole integration point for the
+  robotwin family. Everything else under ``robots/robotwin/`` is contract-level
+  (action contract, tool catalog, task bindings) and deliberately stays
+  simulator- and runtime-free so it imports in the minimal test environment.
 - ``robots/robocasa/run_rollout.py``: the sole integration point for runtime
   v3. The robocasa side has **no** legacy/rollout dual-path option: direct
   calls to ``RoboCasaEnvClient``/``Gr00tClient`` have been fully replaced, and
@@ -77,6 +82,7 @@ RUNTIME_TOOLING_FILES = frozenset(
         "scripts/deployment/m7_acceptance/rr_eval_batching.py",
         "scripts/deployment/m7_acceptance/rr_serve_overhead.py",
         "scripts/deployment/smoke_cosmos_lite.py",
+        "scripts/deployment/visualize_robotwin_episode.py",
         "scripts/experiments/run_ab_runtime.py",
         "scripts/experiments/run_concurrency_ab.py",
         "scripts/experiments/libero_critic_recovery_latency_v3.py",

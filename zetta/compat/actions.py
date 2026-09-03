@@ -64,6 +64,50 @@ def prepare_actions_for_maniskill(
     return actions.reshape(-1, num_action_chunks, action_dim)
 
 
+ROBOTWIN_ACTION_DIM = 14
+"""RoboTwin's ALOHA-style bimanual action width: 6 joints + 1 gripper per arm."""
+
+
+def prepare_actions_for_robotwin(raw_chunk_actions, action_dim: int) -> np.ndarray:
+    """Pass RoboTwin's bimanual joint actions through unchanged.
+
+    RoboTwin consumes absolute ALOHA joint targets, and the Pi0/Pi0.5 pipeline
+    already emits them in that space: the padded 32-dim model output is sliced
+    back to 14 by ``AlohaOutputs``, and the delta-vs-absolute split (deltas on
+    the 6 joints, absolute on the gripper, per arm) is applied by
+    ``DeltaActions``/``AbsoluteActions`` inside the data config. So the correct
+    transform here is the identity -- re-applying any of it would double-count.
+
+    This exists as an explicit branch rather than riding the fall-through
+    identity return: the fall-through also silently accepts a wrong
+    ``action_dim``, and a 7-dim single-arm chunk reaching a bimanual env is
+    exactly the mistake worth failing on.
+
+    Args:
+        raw_chunk_actions: ``[num_envs, chunk, action_dim]`` actions.
+        action_dim: Declared action width; must be 14.
+
+    Returns:
+        The actions unchanged.
+
+    Raises:
+        ValueError: ``action_dim`` is not 14, or the trailing axis disagrees
+            with it.
+    """
+    if action_dim != ROBOTWIN_ACTION_DIM:
+        raise ValueError(
+            f"RoboTwin is bimanual and requires action_dim="
+            f"{ROBOTWIN_ACTION_DIM}, got {action_dim}"
+        )
+    actual = np.shape(raw_chunk_actions)[-1]
+    if actual != ROBOTWIN_ACTION_DIM:
+        raise ValueError(
+            f"RoboTwin action chunk has trailing dimension {actual}, "
+            f"expected {ROBOTWIN_ACTION_DIM}"
+        )
+    return raw_chunk_actions
+
+
 def prepare_actions(
     raw_chunk_actions,
     env_type: str,
@@ -92,4 +136,6 @@ def prepare_actions(
             action_scale,
             policy,
         )
+    if normalized_env_type == "robotwin":
+        return prepare_actions_for_robotwin(raw_chunk_actions, action_dim)
     return raw_chunk_actions

@@ -243,7 +243,7 @@ def test_behavior_table_rejects_unknown_axis_values() -> None:
 
 
 def test_declared_families_cover_the_five_reset_signatures() -> None:
-    """The declared table covers the five reset signatures; robotwin is still declared but not implemented (see the comment below)."""
+    """The declared table covers the four live reset signatures."""
     signatures = {
         behavior.reset_signature for behavior in ENV_FAMILY_BEHAVIORS.values()
     }
@@ -261,20 +261,52 @@ def test_declared_families_cover_the_five_reset_signatures() -> None:
     assert behavior_for("maniskill").needs_accelerator is True
     assert behavior_for(LIBERO_ENV_FAMILY).needs_accelerator is False
     assert behavior_for("robocasa").needs_accelerator is True
-    # robotwin's `robotwin` package does not exist in the validation image, so
-    # it remains "declared but not implemented": what it gets is
-    # UNSUPPORTED_ENV_SPEC + declared=True, not "unknown family".
-    with pytest.raises(RuntimeApiError) as excinfo:
-        get_env_family("robotwin")
-    assert excinfo.value.info.code is ErrorCode.UNSUPPORTED_ENV_SPEC
-    assert excinfo.value.info.detail["declared"] is True
-    # It is also the only ``final_only`` family across all of rlinf; this fact must stay in the declaration table.
+    # robotwin is a CPU subprocess pool too, but SAPIEN will not build a
+    # renderer without a GPU, so it carries the same explicit override.
+    assert behavior_for("robotwin").needs_accelerator is True
+
+
+def test_robotwin_is_the_only_final_only_family() -> None:
+    """``final_only`` exists for robotwin; that fact must stay in the table.
+
+    ``normalize_chunk_outcome``'s whole reason to exist is that one family
+    submits a chunk and sees only its last frame. If this list ever comes back
+    empty, the normalization has lost its only real caller and the guard in
+    ``normalize_chunk_outcome`` is no longer exercised by anything but the
+    ``fake`` backend's impersonation.
+    """
     assert behavior_for("robotwin").chunk_obs_layout == "final_only"
     assert [
         name
         for name, behavior in ENV_FAMILY_BEHAVIORS.items()
         if behavior.chunk_obs_layout == "final_only"
     ] == ["robotwin"]
+
+
+def test_every_declared_family_now_ships_an_adapter() -> None:
+    """No family is declaration-only any more, robotwin included.
+
+    This is the inverse of the assertion this file used to carry: robotwin was
+    declared without an adapter, and ``get_env_family`` was expected to raise
+    ``UNSUPPORTED_ENV_SPEC`` with ``declared=True``. ``rlinf_robotwin.py``
+    closes that gap, so the expectation flips -- every declared family must now
+    resolve to a registered adapter.
+    """
+    from rollout_runtime.backends import ENV_BACKENDS, register_env_family_for
+
+    for name in ENV_FAMILY_BEHAVIORS:
+        assert name in ENV_BACKENDS, f"{name} is declared but has no backend entry"
+        adapter = register_env_family_for(name)
+        assert adapter.env_family == name
+        assert get_env_family(name) is adapter
+
+
+def test_unknown_family_still_reports_unsupported_env_spec() -> None:
+    """The declaration-only path stays live for a future family."""
+    with pytest.raises(RuntimeApiError) as excinfo:
+        get_env_family("not_a_family")
+    assert excinfo.value.info.code is ErrorCode.UNSUPPORTED_ENV_SPEC
+    assert excinfo.value.info.detail["declared"] is False
 
 
 def test_capability_projection_matches_the_behavior() -> None:

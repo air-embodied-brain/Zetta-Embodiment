@@ -14,6 +14,7 @@ from zetta.evolution.lifecycle import (
     _authoritative_task_contract,
     _latest_stage2_context,
     _materialize_multimodal_cluster_review,
+    _normalized_stage1_output,
     _observed_critic_features,
     _route_inconclusive_diagnosis,
     authorize_provisional_hypothesis,
@@ -1008,3 +1009,69 @@ def test_five_failed_candidates_switch_to_secondary_then_stop(tmp_path: Path) ->
         store.state()["optimization_outcome"]
         == "no_candidate_passed_primary_or_secondary"
     )
+
+
+# --- Stage1 output vs accepted diagnosis -----------------------------------
+#
+# Observed on a real campaign: the planner emitted "task_contract": {} -- the
+# field's own default -- every other field matched byte for byte, and
+# CausalDiagnosis.as_dict() drops the key when it is falsy.  The raw-vs-
+# normalised digest comparison in _active_stage1_context therefore mismatched
+# and stalled the run at PROPOSE with the diagnosis already accepted.
+
+
+def _stage1_diagnosis() -> CausalDiagnosis:
+    return CausalDiagnosis(
+        diagnosis_id="diagnosis-normalise",
+        cluster_id="cluster-001",
+        outcome="the horizon elapsed with the bottle still table-supported",
+        immediate_trigger="the active gripper stayed open through truncation",
+        root_cause="the policy never closed the gripper at contact",
+        contributing_causes=("contact occurred late in the horizon",),
+        competing_hypotheses=(
+            "the policy never closed the gripper at contact",
+            "the gripper was commanded shut but did not actuate",
+        ),
+        owner_layer="vla",
+        affected_component="grasp-phase gripper-action generation",
+        earliest_divergence="around step 30",
+        supporting_evidence_ids=("artifact-1",),
+        counterevidence_ids=(),
+        falsifier="a realised close still yields no retention",
+        distinguishing_check="override only the gripper channel at contact",
+        required_validation="paired same-seed live trial",
+        confidence=0.88,
+    )
+
+
+def test_normalized_stage1_output_tolerates_spelled_out_defaults() -> None:
+    diagnosis = _stage1_diagnosis()
+    accepted = diagnosis.as_dict()
+    assert "task_contract" not in accepted
+    assert "visual_evidence" not in accepted
+
+    raw = dict(accepted)
+    raw["task_contract"] = {}
+    raw["visual_evidence"] = []
+
+    assert canonical_sha256(_normalized_stage1_output(raw)) == canonical_sha256(
+        accepted
+    )
+
+
+def test_normalized_stage1_output_still_detects_a_semantic_difference() -> None:
+    accepted = _stage1_diagnosis().as_dict()
+    raw = dict(accepted)
+    raw["root_cause"] = "the gripper was commanded shut but did not actuate"
+
+    assert canonical_sha256(_normalized_stage1_output(raw)) != canonical_sha256(
+        accepted
+    )
+
+
+def test_normalized_stage1_output_reports_an_unusable_output_as_a_mismatch() -> None:
+    raw = dict(_stage1_diagnosis().as_dict())
+    raw["unexpected_field"] = "not a diagnosis field"
+
+    with pytest.raises(ValueError, match="differs from accepted diagnosis"):
+        _normalized_stage1_output(raw)

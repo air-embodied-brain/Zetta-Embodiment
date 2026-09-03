@@ -1,0 +1,187 @@
+# RoboTwin 2.0 + Pi0.5 preset（S2 交付物）。
+#
+# 对应 RLinf 的 evaluations/robotwin/robotwin_adjust_bottle_openpi_pi05_eval.yaml，
+# 参数已按本仓库的 Runtime 语义重排。三条与其他 preset 不同的地方：
+#
+#   1. env_worker.placement_strategy: packed —— RoboTwin 用 SAPIEN 渲染，缺 GPU 时
+#      直接报 "failed to find a rendering device"（env_registry.py 的
+#      needs_accelerator_override=True）。"node" 策略推断出的 has_accelerator=False
+#      会让 EnvWorkerRegistry.serves() 拒绝调度到这个 rank。
+#   2. max_sessions_per_rank / default_pool_size 受 SAPIEN 显存上限约束。24GB 卡上
+#      **全机** 32 个并发 env 会让 camera.take_picture() 抛
+#      "RuntimeError: cannot create buffer"，16 个稳定；而且这是整机预算不是每卡预算
+#      （把 32 个摊到 8 张卡同样失败，SAPIEN 不跟随 rank 的设备分配）。
+#      env_registry.py 的 max_pool_size=16 是硬上限，这里取更保守的值。
+#      实测记录见 plan/robotwin_s0_findings.md。
+#   3. env_config.execute_horizon: 25 —— 模型仍按 num_action_chunks=50 构建并输出
+#      50 步，但每次只提交前 25 步。RoboTwin 是唯一的 final_only 家族，一个 chunk
+#      只回一帧观测；按 50 走意味着 Critic 每 50 个仿真步才看到一帧，整个 episode
+#      只有 4 帧，因果归因无从谈起。
+#      这个值是实测出来的，不是推的（adjust_bottle，16 个 eval 种子）：
+#          horizon=50 → success_once 0.9375（与 RLinf 原生基线逐字一致），4 帧/episode
+#          horizon=25 → success_once 0.875，                              8 帧/episode
+#          horizon=16 → success_once 0.75,                               13 帧/episode
+#      注意：曾经的假设"更频繁的重规划通常还会提高成功率"是**错的**。Pi0.5 一次生成
+#      50 步连贯轨迹、SFT 数据也是整块执行的，中途打断并从运动状态重规划会落到训练分布
+#      之外。25 是在"证据密度翻倍"和"n=16 下与基线差异不显著"之间取的折中；
+#      要把这个选择做成结论需要更大样本（见 plan/robotwin_s0_findings.md §7）。
+#
+# assets_path 必须指向 RoboTwin **仓库根**，不是它的 assets/ 子目录 —— RoboTwin 内部
+# 再拼一层 assets/…，指错会得到 .../assets/assets/... 的 FileNotFoundError。
+
+env_family: robotwin
+env_config:
+  task_name: adjust_bottle
+  # 单元素 = 一台双臂机器人；三元素 = 两条手臂 + 间距，如 [piper, piper, 0.6]。
+  embodiment: ["aloha-agilex"]
+  # 占位符：替换成本机 RoboTwin 源码检出（分支 RLinf_support）的根目录。
+  assets_path: /path/to/RoboTwin
+  # 可选：RLinf 自带的策展 success-seed 表。留空则由家族自行采样种子。
+  # 注意 campaign 的 held-out 划分依赖显式 reset_state_id，二者不冲突：
+  # ResetSpec 里的显式种子始终优先于这张表。
+  seeds_path: null
+  # curobo 需要 CUDA 工具链现编，验证过的镜像里根本没有它；RLinf 自己的 RoboTwin
+  # 配置也一律选 mplib。
+  planner_backend: mplib
+  step_lim: 200
+  max_episode_steps: 200
+  # 相机原生 240x320；center_crop 会中心裁剪并 resize 到 224x224。
+  center_crop: false
+  collect_head_camera: true
+  # 三路视角（head + 左右腕）对应 pi05_aloha_robotwin 的 num_images_in_input: 3。
+  collect_wrist_camera: true
+  head_camera_type: D435
+  wrist_camera_type: D435
+  domain_randomization:
+    random_background: false
+    cluttered_table: false
+    clean_background_rate: 1
+    random_head_camera_dis: 0
+    random_table_height: 0
+    random_light: false
+    crazy_random_light_rate: 0
+  reward_coef: 1.0
+  use_custom_reward: true
+  use_rel_reward: false
+  # RLinf 公布的 eval 设 true（因此它报的 episode_len 恒为整个 horizon）。
+  # Runtime 侧默认关掉：终止信号是 Critic 的一手证据，不该被抹掉。
+  ignore_terminations: false
+  auto_reset: false
+  use_fixed_reset_state_ids: false
+  is_eval: true
+  group_size: 1
+  seed: 0
+  action_dim: 14
+  chunk_size: 25
+  execute_horizon: 25
+  action_model_type: openpi
+  save_video: false
+  # VectorEnv 的 SAPIEN 收尾会段错误（进程内捕获不了），所以 close() 默认只释放引用、
+  # 让子进程随 EnvWorker 进程退出而回收。详见 rlinf_robotwin.py 的 close() docstring。
+  teardown_on_close: false
+  core_form: per_slot
+
+cluster:
+  num_nodes: 1
+  component_placement: {}
+
+gateway:
+  gateway_epoch: 1
+  maintenance_interval_seconds: 1.0
+  default_lease_seconds: 1800.0
+  error_retention_seconds: 300.0
+  result_ttl_seconds: 300.0
+  heartbeat_timeout_seconds: 60.0
+  heartbeat_interval_seconds: 10.0
+  max_concurrency_per_rank: 4
+  metrics_namespace: rr
+
+transport:
+  kind: ray_channel
+  command_queue_size: 64
+  control_queue_size: 16
+  result_queue_size: 64
+  infer_request_queue_size: 16
+  infer_response_queue_size: 16
+  command_timeout_seconds: 600.0
+
+env_worker:
+  group_name: env
+  num_ranks: 1
+  # SAPIEN 渲染要占卡，不能用 node 策略（见文件头注释第 1 点）。
+  placement_strategy: packed
+  # 见文件头注释第 2 点：整机并发 env 上限，不是每卡上限。
+  max_sessions_per_rank: 4
+  default_pool_size: 4
+  seed_offset: 0
+
+rollout_worker:
+  group_name: rollout
+  num_ranks: 1
+  placement_strategy: packed
+  tensor_parallel_size: 1
+  pipeline_parallel_size: 1
+  policy_id: pi05_aloha_robotwin
+  policy_family: openpi
+  policy_backend: zetta_openpi
+  device: cuda
+  dtype: bfloat16
+  max_concurrent_inferences: 4
+  # 字段与 RLinf 的 evaluations/robotwin/robotwin_adjust_bottle_openpi_pi05_eval.yaml
+  # 一一对应（那份配置实测 success_once=0.9375，见 plan/robotwin_s0_findings.md），
+  # 只是 openpi 那一块在本仓库叫 family_params。
+  policy_config:
+    model_type: openpi
+    # 占位符：替换成本机 checkpoint 路径。norm stats 随 checkpoint 一起发布，位于
+    # <model_path>/assets/physical-intelligence/robotwin/norm_stats.json —— 这正是
+    # dataconfig 里 repo_id="physical-intelligence/robotwin" 所指的本地命名空间，
+    # 由 openpi 的 load_norm_stats(checkpoint_dir, asset_id) 读取，不是在线拉取。
+    model_path: /path/to/RLinf-Pi05-RoboTwin-SFT-adjust_bottle
+    # 模型按 50 构建（RLinf 明确注明 num_action_chunks 就是 Pi0 的 action_horizon，
+    # 且不读 checkpoint 里的 config.json）；执行侧截断由 env_config.execute_horizon 控制。
+    num_action_chunks: 50
+    action_dim: 14
+    num_steps: 5
+    use_proprio: true
+    # 与 RLinf eval 保持一致。SFT 权重里没有 value head，加载走 strict=False，
+    # 多出来的参数在推理路径上不参与计算；这里不偏离那份已验证的配置。
+    add_value_head: true
+    model_version: pi05
+    # ALOHA 的 _decode_aloha 用 wrist_images[0]/[1] 取左右腕，且完全不读
+    # extra_view_image。Runtime 的 Observation.wrist_image 只能装一张图，所以
+    # 双腕在 env 侧拆成 wrist_image(左) + extra_view_images[0](右)，这里再拼回
+    # [B, 2, H, W, C]。两者是配对的，改一边不改另一边不会报错，只会把畸形的腕部
+    # 张量喂进视觉塔。
+    stack_wrist_views: true
+    family_params:
+      # 本仓库已注册的 TrainConfig（dataconfig/__init__.py），与 RLinf eval 同名。
+      config_name: pi05_aloha_robotwin
+      # 三路视角：head + 左腕 + 右腕，与 env_config.collect_wrist_camera 对应。
+      num_images_in_input: 3
+      noise_level: 0.3
+      train_expert_only: true
+      noise_method: flow_sde
+      value_after_vlm: false
+      value_vlm_mode: mean_token
+      detach_critic_input: true
+      use_dsrl: false
+  scheduler:
+    max_batch_size: 4
+    max_wait_ms: 20.0
+    max_queue_depth: 32
+    max_inflight_per_application: 8
+    max_inflight_per_session: 1
+    fixed_batch_size: null
+
+admission:
+  require_auth: false
+  tokens: {}
+  max_sessions_per_application: 8
+  max_inflight_operations_per_application: 16
+  max_inflight_operations_per_session: 2
+  max_total_inflight_operations: 32
+
+payload:
+  inline_threshold_bytes: 262144
+  request_limit_bytes: 8388608
+  image_codec: png

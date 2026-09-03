@@ -14,10 +14,9 @@ The registry mechanism and Protocol live here; this module also holds the
 accelerator is needed, and which privileged extensions exist. Separating
 declaration from implementation means neither the Gateway nor the
 EnvWorker needs an ``if env_family == ...`` branch, and a family that is
-"declared but not implemented in this build" (currently only
-``robotwin``, whose package is absent from the validated runtime images)
-gets a clear ``UNSUPPORTED_ENV_SPEC`` + ``declared=True`` instead of a
-``KeyError``.
+declared but has no adapter in a given build gets a clear
+``UNSUPPORTED_ENV_SPEC`` + ``declared=True`` instead of a ``KeyError``.
+Every declared family currently ships an adapter.
 """
 
 from __future__ import annotations
@@ -43,6 +42,7 @@ __all__ = [
     "MANISKILL_ENV_FAMILY",
     "ROBOCASA_ENV_FAMILY",
     "ROBOCASA_EXTENSIONS",
+    "ROBOTWIN_ENV_FAMILY",
     "EnvFamilyAdapter",
     "behavior_for",
     "capability_from_behavior",
@@ -62,6 +62,10 @@ MANISKILL_ENV_FAMILY = "maniskill"
 
 ROBOCASA_ENV_FAMILY = "robocasa"
 """The robocasa family name (a second family, CPU subprocess)."""
+
+ROBOTWIN_ENV_FAMILY = "robotwin"
+"""The robotwin family name (RoboTwin 2.0, bimanual, the sole ``final_only``
+family)."""
 
 CORE_FORM_CONFIG_KEY = "core_form"
 """The key in ``env_config`` that selects the execution-core form. It
@@ -211,23 +215,36 @@ ENV_FAMILY_BEHAVIORS: dict[str, EnvFamilyBehavior] = {
         core_forms=frozenset({PER_SLOT_FORM}),
         obs_extraction="RoboCasaSession.observation (raw gym dict) -> Observation",
     ),
-    # robotwin remains "declared only, not implemented": the `robotwin`
-    # package is absent from every validated runtime image, and pulling
-    # it in would require an entire asset bundle. Keeping this
-    # declaration matters because
-    # (a) it is the **only** `final_only` family across all of rlinf
-    # (robotwin_env.py:322 submits the whole chunk and only returns 1
-    # obs), which is the counter-example fact for normalization; and
-    # (b) create_session therefore gets a clear "declared but not
-    # implemented in this build" instead of "unknown family".
-    "robotwin": EnvFamilyBehavior(
-        env_family="robotwin",
-        env_type="robotwin",
+    # robotwin is the **only** `final_only` family: RoboTwinEnv.chunk_step
+    # (robotwin_env.py:322 at rlinf ref 9ad44393) submits the whole chunk in a
+    # single `venv.step` and returns exactly one observation regardless of the
+    # chunk length. That is the counter-example `normalize_chunk_outcome` was
+    # built around, and it means `ChunkOutcome.per_step` is always None here.
+    ROBOTWIN_ENV_FAMILY: EnvFamilyBehavior(
+        env_family=ROBOTWIN_ENV_FAMILY,
+        env_type=ROBOTWIN_ENV_FAMILY,
         reset_signature="env_idx_env_seeds",
         chunk_obs_layout="final_only",
         action_layout="numpy_env_chunk_dim",
+        # `VectorEnv` is a plain multiprocessing pool -- not a batched-GPU
+        # tensor family like maniskill -- but SAPIEN will not initialise a
+        # renderer without a GPU (`failed to find a rendering device`), so it
+        # declares the accelerator requirement explicitly, exactly as robocasa
+        # does. Verified on hardware, 2026-09-02.
         device_kind="cpu_subproc",
-        obs_extraction="RoboTwinEnv._wrap_obs -> EnvOutput.prepare_observations",
+        needs_accelerator_override=True,
+        # per_slot only: VectorEnv already owns its own subprocess fan-out, so
+        # there is no second "several lanes in one process" form to expose.
+        core_forms=frozenset({PER_SLOT_FORM}),
+        # A whole-device budget, not a per-rank one: on 24 GB cards a total of
+        # 32 concurrent RoboTwin envs makes SAPIEN raise
+        # `RuntimeError: cannot create buffer` inside `camera.take_picture()`,
+        # while 16 is stable -- and splitting the same 32 across more ranks does
+        # not help, because SAPIEN does not follow the rank's device
+        # assignment. Measured on 8x RTX 4090; see
+        # `plan/robotwin_s0_findings.md`.
+        max_pool_size=16,
+        obs_extraction="RoboTwinEnv._extract_obs_image -> Observation",
     ),
 }
 """The declaration table of real env families across the six divergence
@@ -412,9 +429,8 @@ def get_env_family(env_family: str) -> EnvFamilyAdapter:
         declared = env_family in ENV_FAMILY_BEHAVIORS
         message = (
             f"env family {env_family!r} is declared in ENV_FAMILY_BEHAVIORS but no "
-            "adapter is registered in this build (this build ships libero / "
-            "maniskill / robocasa; robotwin stays declaration-only because the "
-            "`robotwin` package is absent from the validated runtime images)"
+            "adapter is registered in this build; call "
+            "`backends.register_env_family_for` first"
             if declared
             else f"unknown env family: {env_family!r}"
         )
