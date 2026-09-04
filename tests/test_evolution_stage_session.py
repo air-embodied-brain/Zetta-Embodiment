@@ -296,6 +296,7 @@ def test_stage_recovers_completed_attempt_after_validator_fix(
             "reasoning_effort": "high",
             "provider_reported_resumed": True,
             "reconstructed": False,
+            "evidence_policy": agent.EVIDENCE_POLICY,
             "error": None,
         },
         overwrite=False,
@@ -326,10 +327,83 @@ def test_stage_recovers_completed_attempt_after_validator_fix(
         "reasoning_effort": "high",
         "resumed": True,
         "reconstructed": False,
+        "evidence_policy": agent.EVIDENCE_POLICY,
         "successful_attempt": "attempt-000",
         "output_sha256": canonical_sha256(recovered),
         "revalidated_completed_attempt": True,
     }
+
+
+def test_stage_exposes_only_audited_evidence_capabilities(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: dict[str, Any] = {}
+
+    class FakePlanner:
+        def solve(self, **kwargs: Any) -> PlannerResult:
+            captured["tool_names"] = {
+                str(spec["name"])
+                for spec in kwargs["toolkit"].get_tools_spec()
+            }
+            return PlannerResult(
+                messages=[{"content": json.dumps({"accepted": True})}],
+                stats={"thread_id": "thread-evidence-only"},
+            )
+
+    def build(kind: str, **kwargs: Any) -> FakePlanner:
+        assert kind == "codex"
+        captured["build"] = kwargs
+        return FakePlanner()
+
+    monkeypatch.setattr("zetta.evolution.stages.build_planner", build)
+    root = tmp_path / "candidate"
+    result = CodexStageAgent(
+        output_root=root,
+        artifact_reader=lambda _content_id: {"kind": "structured"},
+    )._invoke(
+        stage="evidence-only",
+        system_prompt="system",
+        payload={"bounded": True},
+        validator=lambda value: None,
+    )
+
+    assert result == {"accepted": True}
+    assert captured["tool_names"] == {
+        "describe_tools",
+        "read_campaign_artifact",
+    }
+    build_kwargs = captured["build"]
+    assert build_kwargs["codex_repo_root"] == (
+        root / "evidence-only" / "attempt-000"
+    )
+    assert build_kwargs["codex_sandbox"] == "read-only"
+    assert build_kwargs["codex_native_tools"] is False
+
+
+def test_stage_rejects_context_that_predates_evidence_isolation(
+    tmp_path: Path,
+) -> None:
+    stage = tmp_path / "stage2-proposal"
+    stage.mkdir()
+    atomic_write_json(stage / "input.json", {"bounded": True}, overwrite=False)
+    atomic_write_json(stage / "output.json", {"accepted": True}, overwrite=False)
+    atomic_write_json(
+        stage / "context.json",
+        {
+            "session_id": "legacy-session",
+            "provider_thread_id": "legacy-thread",
+            "stage": "stage2-proposal",
+            "successful_attempt": "attempt-000",
+        },
+        overwrite=False,
+    )
+
+    with pytest.raises(ValueError, match="predates enforced evidence isolation"):
+        CodexStageAgent(output_root=tmp_path)._invoke(
+            stage="stage2-proposal",
+            system_prompt="system",
+            payload={"bounded": True},
+        )
 
 
 def _diagnosis() -> CausalDiagnosis:

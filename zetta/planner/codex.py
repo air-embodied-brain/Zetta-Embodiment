@@ -73,6 +73,8 @@ class CodexPlanner:
         reasoning_effort: str | None = None,
         dashboard: Any = None,
         resume_thread_id: str | None = None,
+        sandbox: str | None = None,
+        native_tools: bool = True,
     ):
         """Initialize the Codex SDK backend."""
         self._output_dir = str(output_dir)
@@ -94,7 +96,10 @@ class CodexPlanner:
         self._external_provider_broker = load_provider_broker_connection()
         self._provider_proxy_base_url: str | None = None
         self._provider_proxy_api_key: str | None = None
-        self._sandbox = _sandbox_from_env()
+        self._sandbox = (
+            _sandbox_from_env() if sandbox is None else _sandbox_from_name(sandbox)
+        )
+        self._native_tools = bool(native_tools)
         self._dashboard = dashboard
         if resume_thread_id is not None and not str(resume_thread_id).strip():
             raise ValueError("resume_thread_id must be non-empty when provided")
@@ -274,6 +279,7 @@ class CodexPlanner:
                     else "default"
                 ),
                 "sandbox": self._sandbox.value,
+                "native_tools": self._native_tools,
                 "elapsed_s": round(elapsed, 1),
                 "output_chars": len(text),
                 "output_path": str(output_path),
@@ -484,6 +490,7 @@ class CodexPlanner:
                     base_url=effective_base_url,
                     reasoning_effort=self._reasoning_effort,
                     reasoning_summary=self._reasoning_summary,
+                    native_tools=self._native_tools,
                 )
             ),
             "cwd": self._repo_root,
@@ -503,7 +510,12 @@ class CodexPlanner:
 
 def _sandbox_from_env() -> Any:
     """Resolve the planner sandbox without weakening the historical default."""
-    requested = os.environ.get("ZETTA_CODEX_SANDBOX", "full-access").strip().lower()
+    return _sandbox_from_name(os.environ.get("ZETTA_CODEX_SANDBOX", "full-access"))
+
+
+def _sandbox_from_name(requested: str) -> Any:
+    """Resolve one explicit Codex sandbox name."""
+    normalized = requested.strip().lower()
     aliases = {
         "read-only": openai_codex.Sandbox.read_only,
         "readonly": openai_codex.Sandbox.read_only,
@@ -512,11 +524,11 @@ def _sandbox_from_env() -> Any:
         "full": openai_codex.Sandbox.full_access,
     }
     try:
-        return aliases[requested]
+        return aliases[normalized]
     except KeyError as exc:
         raise ValueError(
             "ZETTA_CODEX_SANDBOX must be read-only, workspace-write, or full-access; "
-            f"got {requested!r}"
+            f"got {normalized!r}"
         ) from exc
 
 
@@ -716,11 +728,21 @@ def _codex_mcp_config_overrides(
     base_url: str | None,
     reasoning_effort: str | None = None,
     reasoning_summary: str | None = None,
+    native_tools: bool = True,
 ) -> list[str]:
     config: list[tuple[str, Any]] = [
         ("mcp_servers.zetta.url", mcp_url),
         ("mcp_servers.zetta.required", True),
     ]
+    if not native_tools:
+        config.extend(
+            [
+                ("features.shell_tool", False),
+                ("features.shell_snapshot", False),
+                ("tools.view_image", False),
+                ("tools.web_search", False),
+            ]
+        )
     if base_url:
         normalized = base_url.rstrip("/")
         if not normalized.endswith("/v1"):
