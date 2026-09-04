@@ -29,7 +29,8 @@ Zetta is an efficient closed-loop embodied harness for self-evolving physical in
   -> Shadow Replay
   -> paired Same-seed Gate
   -> Held-out seeds 1..20
-  -> Reject and return to Stage 2, or Promote and complete
+     -> validation mode: Reject (refine if budget remains), or Promote
+     -> test mode: Record an unbiased final report without feeding selection
 ```
 
 Runtime role boundaries:
@@ -200,6 +201,9 @@ python scripts/evolution/prepare_libero_campaign.py \
   --heldout-mode test \
   --runtime-url http://127.0.0.1:18730 \
   --runtime-policy-id <policy-id>
+
+# `--heldout-mode test` keeps the fixed block report-only. To make a held-out
+# failure reject the candidate, preregister `--heldout-mode validation` instead.
 
 # 2. Run it: this starts the worker, ingests episodes, and drives
 #    Cluster -> Diagnose -> Stage2 -> Shadow Replay -> Same-seed -> Held-out.
