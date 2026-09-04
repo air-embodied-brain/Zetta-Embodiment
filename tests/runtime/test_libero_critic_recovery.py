@@ -13,11 +13,13 @@ Coverage:
 3. When ``critic_interrupt_on_proposal=False``, a hit does not stop early
    either (it keeps running the full chunk, unless the environment itself
    terminates);
-4. ``critic_previous_eef`` persists across physical action steps, and
+4. Reset observation seeds ``critic_previous_eef`` so realization features
+   are available on the first physical action step;
+5. ``critic_previous_eef`` persists across physical action steps, and
    ``audit_trace`` accumulates step-by-step records;
-5. Across episodes (reset), Critic state and history are rebuilt/cleared;
-6. An invalid ``critic_rules`` payload reports ``INVALID_ARGUMENT`` at reset;
-7. Configuring ``critic_rules`` on a ``lockstep_vector`` form reports
+6. Across episodes (reset), Critic state and history are rebuilt/cleared;
+7. An invalid ``critic_rules`` payload reports ``INVALID_ARGUMENT`` at reset;
+8. Configuring ``critic_rules`` on a ``lockstep_vector`` form reports
    ``INVALID_ARGUMENT`` (that form goes through the family-shared
    ``run_lockstep_chunk``, which does not go through the Critic evaluation
    hook).
@@ -79,17 +81,15 @@ def _build_core(env_config: dict[str, Any] | None = None, *, pool_size: int = 1)
     return core
 
 
-_STAGNANT_RULE = {
-    "rule_id": "eef-stagnant",
-    "feature": "robot.eef.motion_m",
+_CLOSE_WHILE_STALLED_RULE = {
+    "rule_id": "close-while-stalled",
+    "feature": "command.realization.eef_motion_m",
     "operator": "le",
-    "threshold": 0.0,
+    "threshold": 0.0005,
     "dwell_steps": 1,
-    "proposal": "eef did not move this step",
+    "proposal": "close while stalled",
 }
-"""A rule the stub naturally satisfies since ``states`` has zero displacement
-every step: the first step where real displacement can be computed is a
-hit."""
+"""The issue #24 rule whose feature must exist on the first physics step."""
 
 
 def _action_block(chunk: int) -> np.ndarray:
@@ -140,6 +140,39 @@ def test_empty_critic_rules_list_is_equivalent_to_absent(
     core.close()
 
 
+def test_first_step_command_realization_uses_reset_eef(
+    stub_rlinf: type[_StubLiberoEnv],
+) -> None:
+    """The first physical step can evaluate an EEF-realization rule.
+
+    The reset observation is the displacement anchor. Without it, the
+    extractor omits ``command.realization.eef_motion_m`` and the live Critic
+    raises the issue #24 ``KeyError`` before evaluating the rule.
+
+    Args:
+        stub_rlinf: rlinf stub fixture.
+    """
+    core = _build_core()
+    reset_observation = core.reset(
+        [0],
+        ResetSpec(
+            task_id=0,
+            seed=0,
+            options={"critic_rules": [_CLOSE_WHILE_STALLED_RULE]},
+        ),
+    )[0]
+    slot = core._slots[0]  # noqa: SLF001
+    np.testing.assert_allclose(slot.critic_previous_eef, reset_observation.state[:3])
+
+    outcome = core.chunk_step([0], [_action_block(1)])[0]
+
+    assert outcome.executed_horizon == 1
+    assert outcome.info["critic_proposals"] == []
+    assert len(slot.audit_trace) == 1
+    np.testing.assert_allclose(slot.critic_previous_eef, [1.0, 1.0, 1.0])
+    core.close()
+
+
 # --------------------------------------------------------------- hits and interruption
 
 
@@ -149,15 +182,8 @@ def test_hit_rule_populates_proposals_and_interrupts_by_default(
     """When a rule hits, the proposal goes into ``info``, and by default the
     physical action loop breaks out early.
 
-    The stub's ``states`` is a constant vector (every step equals the step
-    index), so EEF displacement is identically 0 before the first step that
-    "has a previous step to compare against" (the 2nd step within the
-    chunk)—so ``_STAGNANT_RULE`` should in principle hit at step 1 (the first
-    step has no ``previous_eef``, so ``robot.eef.delta_available`` is false,
-    but the rule doesn't set it as an activation condition; directly
-    evaluating the main operator against a missing ``motion_m`` would raise
-    ``KeyError``; hence a stable field not dependent on ``previous_eef`` is
-    used instead).
+    This test deliberately uses ``episode.step_index`` so it isolates proposal
+    interruption timing from the EEF-realization regression covered above.
 
     Args:
         stub_rlinf: rlinf stub fixture.
@@ -329,8 +355,8 @@ def test_critic_state_persists_across_chunk_calls(
 def test_reset_rebuilds_critic_and_clears_history(
     stub_rlinf: type[_StubLiberoEnv],
 ) -> None:
-    """A new episode (reset) rebuilds the Critic and clears
-    ``audit_trace`` and ``critic_previous_eef``.
+    """A new episode rebuilds the Critic, clears its audit trace, and reseeds
+    ``critic_previous_eef`` from the new reset observation.
 
     Args:
         stub_rlinf: rlinf stub fixture.
@@ -354,7 +380,7 @@ def test_reset_rebuilds_critic_and_clears_history(
 
     core.reset([0], ResetSpec(task_id=0, seed=1, options={"critic_rules": rules_payload}))
     assert slot.audit_trace == []
-    assert slot.critic_previous_eef is None
+    np.testing.assert_allclose(slot.critic_previous_eef, [0.0, 0.0, 0.0])
     assert slot.critic is not first_critic
     assert slot.critic_history_pending_reset is True
     core.close()
