@@ -60,6 +60,8 @@ env_config:
   # 且单个 payload 都在 256 KiB inline 阈值之内（oversize 计数不涨）。
   return_all_frames: true
   libero_variant: standard
+  # 只为首次成功的 scene reset 保留显存；warm reset 不重复扣账。
+  gpu_memory_reserve_mib: 800
 
 cluster:
   num_nodes: 1

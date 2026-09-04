@@ -32,6 +32,7 @@ env_config:
   camera_depths: true
   return_all_frames: false
   libero_variant: standard
+  gpu_memory_reserve_mib: 800
 
 cluster:
   num_nodes: 1

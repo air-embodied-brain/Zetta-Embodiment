@@ -47,6 +47,7 @@ env_config:
   # §2.5 的 256 KiB inline 阈值。需要逐帧时才打开（等价 legacy return_all_frames）。
   return_all_frames: false
   libero_variant: standard
+  gpu_memory_reserve_mib: 800
 
 cluster:
   num_nodes: 1
