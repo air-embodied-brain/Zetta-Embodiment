@@ -13,7 +13,7 @@ The M3 shape (M2 only wired things together, without batching):
 | ``init_worker`` / ``infer_batch`` / ``send_responses`` | Same as M2 |
 | ``serve`` | Two persistent loops: ``receive_requests`` ‖ ``execute_batches`` |
 | ``receive_requests`` | Competitively get from ``rr_infer_req["pending"]`` → record ``routing_token`` → **enqueue into the scheduler** |
-| ``execute_batches`` | Pull a batch bucketed by ``compat_key`` (``max_batch_size`` / ``max_wait_ms`` / priority / tenant fairness), one task per batch |
+| ``execute_batches`` | Pull a batch bucketed by ``compat_key`` (``max_batch_size`` / ``max_wait_ms`` / priority / tenant fairness); local synchronous cores execute one batch at a time, while truly asynchronous cores may overlap batches |
 | ``update_weights`` | The scheduler's version fence: raise fence → wait for in-flight to drain → swap weights → lower fence |
 
 Fetching is constrained by **two gates**; once either is saturated, no more requests
@@ -218,7 +218,12 @@ class RuntimeRolloutWorker:
         No polling: ``scheduler.time_until_ready`` gives the due time for the next
         batch, and the loop waits exactly that long (or until woken by a new
         request), so ``max_wait_ms`` is a genuine batch-accumulation window rather
-        than a sampling period.
+        than a sampling period. Synchronous policy cores are local compute
+        backends executed through ``asyncio.to_thread``. Only one such batch is
+        dispatched at a time: while it owns the accelerator, newly received
+        requests remain mergeable in the scheduler instead of becoming a queue of
+        immutable micro-batches. Cores exposing native ``ainfer_batch`` retain
+        concurrent dispatch for cancellable remote/asynchronous inference.
 
         Args:
             response_channel: The ``rr_infer_resp`` channel.
@@ -227,7 +232,13 @@ class RuntimeRolloutWorker:
         while self._serving:
             batch = self.scheduler.next_batch(loop.time())
             if batch:
-                self._spawn(self._run_batch(batch, response_channel))
+                sync_core = getattr(self.policy, "ainfer_batch", None) is None
+                inference_done = asyncio.Event() if sync_core else None
+                self._spawn(
+                    self._run_batch(batch, response_channel, inference_done)
+                )
+                if inference_done is not None:
+                    await inference_done.wait()
                 continue
             self._wake.clear()
             delay = self.scheduler.time_until_ready(loop.time())
@@ -251,13 +262,17 @@ class RuntimeRolloutWorker:
             with contextlib.suppress(asyncio.TimeoutError, asyncio.CancelledError):
                 await asyncio.wait_for(self._wake.wait(), delay)
 
-    def _spawn(self, coroutine: Any) -> None:
+    def _spawn(self, coroutine: Any) -> asyncio.Task[None]:
         task = asyncio.get_running_loop().create_task(coroutine)
         self._tasks.add(task)
         task.add_done_callback(self._finish_task)
+        return task
 
     async def _run_batch(
-        self, batch: list[PendingRequest], response_channel: Any
+        self,
+        batch: list[PendingRequest],
+        response_channel: Any,
+        inference_done: asyncio.Event | None = None,
     ) -> None:
         """Execute one batch and send responses (total function).
 
@@ -267,11 +282,17 @@ class RuntimeRolloutWorker:
         """
         requests = [pending.request for pending in batch]
         try:
-            responses = await self.infer_batch(requests)
-        except asyncio.CancelledError:
-            raise
-        except BaseException as exc:  # noqa: BLE001 - must never leak
-            responses = [self._failed_response(request, exc) for request in requests]
+            try:
+                responses = await self.infer_batch(requests)
+            except asyncio.CancelledError:
+                raise
+            except BaseException as exc:  # noqa: BLE001 - must never leak
+                responses = [
+                    self._failed_response(request, exc) for request in requests
+                ]
+        finally:
+            if inference_done is not None:
+                inference_done.set()
         try:
             await self.send_responses(responses, response_channel)
         except asyncio.CancelledError:
