@@ -453,8 +453,8 @@ class _LiberoSlot:
             legacy ``critic_chunk_step``'s ``interrupt_on_proposal``).
         critic_previous_eef: The EEF position (3D) from the previous physical
             action step, used by ``extract_libero_critic_features`` to compute
-            genuine displacement; ``None`` means there is no previous step yet
-            (the first step after reset).
+            genuine displacement. It is seeded from the reset observation so
+            realization features are available on the first physical step.
         critic_history_pending_reset: Whether the next read of the
             subprocess's ``critic_state`` extension should request clearing
             cross-call history (``ever_grasped``, etc.). Set true on every
@@ -943,7 +943,7 @@ class LiberoEnvCore:
                 env_idx=np.array([0]),
                 reset_state_ids=np.array([reset_state_id]),
             )
-            self._after_reset(slot_index, reset_state_id, reset_spec)
+            self._after_reset(slot_index, reset_state_id, reset_spec, obs)
             observations.append(self._observation(slot_index, obs))
         return observations
 
@@ -996,12 +996,16 @@ class LiberoEnvCore:
         for slot_index in slots:
             slot = self._slots[slot_index]
             index = lanes.index(slot.lane_index)
-            self._after_reset(slot_index, int(reset_state_ids[index]), reset_spec)
+            self._after_reset(slot_index, int(reset_state_ids[index]), reset_spec, obs)
             observations.append(self._observation(slot_index, obs))
         return observations
 
     def _after_reset(
-        self, slot_index: int, reset_state_id: int, reset_spec: ResetSpec
+        self,
+        slot_index: int,
+        reset_state_id: int,
+        reset_spec: ResetSpec,
+        obs: dict[str, Any],
     ) -> None:
         """Per-lane bookkeeping after reset (shared by both forms).
 
@@ -1009,6 +1013,8 @@ class LiberoEnvCore:
             slot_index: The slot index.
             reset_state_id: This episode's reset state id.
             reset_spec: Episode initialization parameters.
+            obs: The family reset observation, used to seed the EEF
+                displacement anchor for the first physical step.
         """
         slot = self._slots[slot_index]
         lane = slot.lane_index
@@ -1025,7 +1031,10 @@ class LiberoEnvCore:
             reset_spec.instruction or slot.env.task_descriptions[lane]
         )
         slot.audit_trace = []
-        slot.critic_previous_eef = None
+        states = _to_numpy(obs["states"])[lane].reshape(-1)
+        slot.critic_previous_eef = (
+            states[:3].astype(np.float64).copy() if states.size >= 3 else None
+        )
         slot.critic_history_pending_reset = True
         self._configure_critic(slot, reset_spec)
 
