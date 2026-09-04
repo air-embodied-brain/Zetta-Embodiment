@@ -38,6 +38,7 @@ the simulator dependency kept as a lazy import inside functions.
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import os
 import threading
@@ -83,6 +84,7 @@ from rollout_runtime.core.env_registry import (
     register_env_family,
     requested_core_form,
 )
+from zetta.utils.gpu_memory_guard import GpuMemoryExhausted, reserve_gpu_memory
 
 __all__ = [
     "LIBERO_ENV_FAMILY",
@@ -175,6 +177,10 @@ class LiberoEnvConfig:
             explanation.
         assets_root: Override for the robosuite assets root directory;
             ``None`` means no override.
+        gpu_memory_reserve_mib: Estimated transient GPU allocation for one
+            LIBERO scene's first reset. The process-local GPU guard uses it
+            to prevent concurrent native allocations from overcommitting a
+            device. Zero disables the guard.
     """
 
     task_suite_name: str = "libero_10"
@@ -206,6 +212,7 @@ class LiberoEnvConfig:
     core_form: str = PER_SLOT_FORM
 
     assets_root: str | None = None
+    gpu_memory_reserve_mib: int = 800
 
     @classmethod
     def from_mapping(cls, config: Mapping[str, Any] | None) -> LiberoEnvConfig:
@@ -465,6 +472,9 @@ class _LiberoSlot:
         audit_trace: The per-step audit record accumulated across chunks
             (matching the legacy ``_audit_trace``, read by the
             ``libero.audit_trace`` extension method).
+        gpu_scene_ready: Whether this slot has completed its first reset and
+            therefore already owns its EGL/MuJoCo scene allocation. Warm
+            episode-boundary resets must not reserve that memory again.
     """
 
     env: Any
@@ -491,6 +501,7 @@ class _LiberoSlot:
     critic_previous_eef: np.ndarray | None = None
     critic_history_pending_reset: bool = True
     audit_trace: list[dict[str, Any]] = dataclasses.field(default_factory=list)
+    gpu_scene_ready: bool = False
 
 
 class LiberoEnvCore:
@@ -526,6 +537,9 @@ class LiberoEnvCore:
         # Vector form: whether the whole pool has already been fully
         # initialized once (the first reset must cover every lane).
         self._vector_initialized = False
+        # A vector pool owns one shared native scene allocation, so its GPU
+        # reservation lifecycle is pool-wide rather than per lane.
+        self._vector_gpu_scene_ready = False
         self._slots: list[_LiberoSlot] = []
         self._slot_mutation_lock = threading.Lock()
         self._envs: list[Any] = []
@@ -728,6 +742,7 @@ class LiberoEnvCore:
         self.total_num_processes = total_processes
         self._core_form = core_form
         self._vector_initialized = False
+        self._vector_gpu_scene_ready = False
         self._slots = slots
         self._envs = envs
         self.closed = False
@@ -939,12 +954,44 @@ class LiberoEnvCore:
         for slot_index in slots:
             slot = self._require_slot(slot_index)
             reset_state_id = self._reset_state_id(slot, reset_spec)
-            obs, _info = slot.env.reset(
-                env_idx=np.array([0]),
-                reset_state_ids=np.array([reset_state_id]),
+            reservation = (
+                contextlib.nullcontext()
+                if slot.gpu_scene_ready
+                else reserve_gpu_memory(
+                    self.config.gpu_memory_reserve_mib,
+                    device=(
+                        None
+                        if os.environ.get("CUDA_VISIBLE_DEVICES")
+                        else slot.process_offset
+                    ),
+                )
             )
+            try:
+                with reservation:
+                    obs, _info = slot.env.reset(
+                        env_idx=np.array([0]),
+                        reset_state_ids=np.array([reset_state_id]),
+                    )
+            except GpuMemoryExhausted as exc:
+                raise RuntimeApiError(
+                    make_error(
+                        ErrorCode.RESOURCE_EXHAUSTED,
+                        f"GPU memory guard rejected libero.reset[slot={slot_index}]: "
+                        f"{exc}",
+                        resource="gpu_memory",
+                        reason="OOM",
+                        slot_index=slot_index,
+                        device=exc.device,
+                        requested_mib=exc.requested_mib,
+                        available_mib=exc.available_mib,
+                    )
+                ) from exc
             self._after_reset(slot_index, reset_state_id, reset_spec, obs)
-            observations.append(self._observation(slot_index, obs))
+            observation = self._observation(slot_index, obs)
+            # Commit the cold-to-warm transition last. Any failure in the
+            # reset or its bookkeeping must reserve again on retry.
+            slot.gpu_scene_ready = True
+            observations.append(observation)
         return observations
 
     def _reset_lockstep(
@@ -982,10 +1029,35 @@ class LiberoEnvCore:
             all_lanes = [slot.lane_index for slot in self._slots]
             lanes = all_lanes
             reset_state_ids = [requested.get(lane, filler) for lane in all_lanes]
-        obs, _info = env.reset(
-            env_idx=np.array(lanes),
-            reset_state_ids=np.array(reset_state_ids),
+        reservation = (
+            contextlib.nullcontext()
+            if self._vector_gpu_scene_ready
+            else reserve_gpu_memory(
+                self.config.gpu_memory_reserve_mib,
+                device=(
+                    None if os.environ.get("CUDA_VISIBLE_DEVICES") else self.seed_offset
+                ),
+            )
         )
+        try:
+            with reservation:
+                obs, _info = env.reset(
+                    env_idx=np.array(lanes),
+                    reset_state_ids=np.array(reset_state_ids),
+                )
+        except GpuMemoryExhausted as exc:
+            raise RuntimeApiError(
+                make_error(
+                    ErrorCode.RESOURCE_EXHAUSTED,
+                    f"GPU memory guard rejected libero.reset[vector]: {exc}",
+                    resource="gpu_memory",
+                    reason="OOM",
+                    slots=list(slots),
+                    device=exc.device,
+                    requested_mib=exc.requested_mib,
+                    available_mib=exc.available_mib,
+                )
+            ) from exc
         # Only set the flag **after success**: setting it on failure would
         # make a retry go through the subset-reset path -- exactly the path
         # that raises ``'NoneType' object is not subscriptable`` on an
@@ -998,6 +1070,9 @@ class LiberoEnvCore:
             index = lanes.index(slot.lane_index)
             self._after_reset(slot_index, int(reset_state_ids[index]), reset_spec, obs)
             observations.append(self._observation(slot_index, obs))
+        # As above, only the complete reset transaction makes the shared
+        # scene warm. A failed cold reset must reserve again on retry.
+        self._vector_gpu_scene_ready = True
         return observations
 
     def _after_reset(

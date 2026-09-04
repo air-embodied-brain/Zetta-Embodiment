@@ -48,6 +48,7 @@ env_config:
   action_model_type: openpi
   return_all_frames: true
   libero_variant: pro
+  gpu_memory_reserve_mib: 800
 
 cluster:
   num_nodes: 1

@@ -32,6 +32,7 @@ env_config:
   return_all_frames: true
   # 相对于 a100_libero_pi05_pro.yaml 的唯一改动：pro -> standard。
   libero_variant: standard
+  gpu_memory_reserve_mib: 800
 
 cluster:
   num_nodes: 1

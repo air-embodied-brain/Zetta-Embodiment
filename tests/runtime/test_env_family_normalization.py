@@ -23,6 +23,7 @@ undeclared methods) and the capability table.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from typing import Any
 
 import numpy as np
@@ -86,6 +87,9 @@ def _build_core(env_config: dict[str, Any] | None = None, *, pool_size: int = 1)
         "camera_width": IMAGE_SIZE,
         "action_dim": ACTION_DIM,
         "chunk_size": 4,
+        # Unit tests use a simulator stub and must not depend on live host
+        # NVML state. GPU-guard tests opt back in explicitly below.
+        "gpu_memory_reserve_mib": 0,
         **(env_config or {}),
     }
     spec = EnvSpecMsg(
@@ -399,6 +403,108 @@ def test_reset_produces_the_five_key_schema(
     core.close()
 
 
+def test_per_slot_reset_reserves_gpu_memory_only_until_scene_is_ready(
+    stub_rlinf: type[_StubLiberoEnv], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Cold resets reserve once per slot while warm resets skip the ledger."""
+    from rollout_runtime.backends import rlinf_env
+
+    core = _build_core({"gpu_memory_reserve_mib": 800}, pool_size=2)
+    reservations: list[tuple[int, int | None]] = []
+
+    @contextmanager
+    def record_reservation(requested_mib: int, *, device: int | None = None):
+        reservations.append((requested_mib, device))
+        yield
+
+    monkeypatch.setattr(rlinf_env, "reserve_gpu_memory", record_reservation)
+
+    core.reset([0], ResetSpec(task_id=0, seed=0))
+    core.reset([0], ResetSpec(task_id=0, seed=1))
+    core.reset([1], ResetSpec(task_id=0, seed=2))
+    core.reset([1], ResetSpec(task_id=0, seed=3))
+
+    assert [requested for requested, _device in reservations] == [800, 800]
+    assert [slot.gpu_scene_ready for slot in core._slots] == [True, True]  # noqa: SLF001
+    core.close()
+
+
+def test_failed_per_slot_cold_reset_reserves_again_on_retry(
+    stub_rlinf: type[_StubLiberoEnv], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed first reset must not make the slot look warm."""
+    from rollout_runtime.backends import rlinf_env
+
+    core = _build_core({"gpu_memory_reserve_mib": 800})
+    reservations = 0
+
+    @contextmanager
+    def record_reservation(requested_mib: int, *, device: int | None = None):
+        del requested_mib, device
+        nonlocal reservations
+        reservations += 1
+        yield
+
+    monkeypatch.setattr(rlinf_env, "reserve_gpu_memory", record_reservation)
+    env = core._slots[0].env  # noqa: SLF001
+    original_reset = env.reset
+    attempts = 0
+
+    def fail_once(*, env_idx: np.ndarray, reset_state_ids: np.ndarray):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RuntimeError("cold reset failed")
+        return original_reset(env_idx=env_idx, reset_state_ids=reset_state_ids)
+
+    monkeypatch.setattr(env, "reset", fail_once)
+    with pytest.raises(RuntimeError, match="cold reset failed"):
+        core.reset([0], ResetSpec(task_id=0, seed=0))
+    assert core._slots[0].gpu_scene_ready is False  # noqa: SLF001
+
+    core.reset([0], ResetSpec(task_id=0, seed=0))
+    assert reservations == 2
+    assert core._slots[0].gpu_scene_ready is True  # noqa: SLF001
+    core.close()
+
+
+def test_gpu_guard_rejection_is_resource_exhausted_and_slot_stays_cold(
+    stub_rlinf: type[_StubLiberoEnv], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Admission rejection is retryable and cannot consume the cold marker."""
+    from rollout_runtime.backends import rlinf_env
+    from zetta.utils.gpu_memory_guard import GpuMemoryExhausted
+
+    core = _build_core({"gpu_memory_reserve_mib": 800})
+    attempts = 0
+
+    @contextmanager
+    def reject_once(requested_mib: int, *, device: int | None = None):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise GpuMemoryExhausted(
+                device=0,
+                requested_mib=requested_mib,
+                available_mib=128,
+            )
+        del device
+        yield
+
+    monkeypatch.setattr(rlinf_env, "reserve_gpu_memory", reject_once)
+    with pytest.raises(RuntimeApiError) as excinfo:
+        core.reset([0], ResetSpec(task_id=0, seed=0))
+    assert excinfo.value.info.code is ErrorCode.RESOURCE_EXHAUSTED
+    assert excinfo.value.info.detail["resource"] == "gpu_memory"
+    assert excinfo.value.info.detail["slot_index"] == 0
+    assert core._slots[0].gpu_scene_ready is False  # noqa: SLF001
+
+    core.reset([0], ResetSpec(task_id=0, seed=0))
+    assert attempts == 2
+    assert core._slots[0].gpu_scene_ready is True  # noqa: SLF001
+    core.close()
+
+
 def test_observe_before_reset_is_rejected(
     stub_rlinf: type[_StubLiberoEnv],
 ) -> None:
@@ -701,6 +807,7 @@ def test_env_config_aliases_and_unknown_keys() -> None:
     assert config.task_suite_name == "libero_goal"
     assert config.max_episode_steps == 300
     assert (config.camera_height, config.camera_width) == (128, 64)
+    assert LiberoEnvConfig.from_mapping({}).gpu_memory_reserve_mib == 800
 
     with pytest.raises(RuntimeApiError) as excinfo:
         LiberoEnvConfig.from_mapping({"image_hieght": 256})
@@ -789,6 +896,49 @@ def test_libero_accepts_the_core_form_key_and_builds_one_vector_env(
     assert core._envs[0].num_envs == 3
     assert [slot.lane_index for slot in core._slots] == [0, 1, 2]
     assert core._envs[0].is_start is False
+    core.close()
+
+
+def test_vector_reset_reserves_once_and_failed_cold_reset_retries(
+    stub_rlinf: type[_StubLiberoEnv], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The shared vector scene becomes warm only after reset succeeds."""
+    from rollout_runtime.backends import rlinf_env
+
+    core = _build_core(
+        {"core_form": LOCKSTEP_VECTOR_FORM, "gpu_memory_reserve_mib": 800},
+        pool_size=2,
+    )
+    reservations = 0
+
+    @contextmanager
+    def record_reservation(requested_mib: int, *, device: int | None = None):
+        del requested_mib, device
+        nonlocal reservations
+        reservations += 1
+        yield
+
+    monkeypatch.setattr(rlinf_env, "reserve_gpu_memory", record_reservation)
+    env = core._envs[0]  # noqa: SLF001
+    original_reset = env.reset
+    attempts = 0
+
+    def fail_once(*, env_idx: np.ndarray, reset_state_ids: np.ndarray):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RuntimeError("vector cold reset failed")
+        return original_reset(env_idx=env_idx, reset_state_ids=reset_state_ids)
+
+    monkeypatch.setattr(env, "reset", fail_once)
+    with pytest.raises(RuntimeError, match="vector cold reset failed"):
+        core.reset([0], ResetSpec(task_id=0, seed=0))
+    assert core._vector_gpu_scene_ready is False  # noqa: SLF001
+
+    core.reset([0], ResetSpec(task_id=0, seed=0))
+    core.reset([1], ResetSpec(task_id=0, seed=1))
+    assert reservations == 2
+    assert core._vector_gpu_scene_ready is True  # noqa: SLF001
     core.close()
 
 
