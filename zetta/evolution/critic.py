@@ -58,7 +58,6 @@ class TemporalCritic:
         proposals: list[dict[str, Any]] = []
         for rule in self.rules:
             state = self._state[rule.rule_id]
-            value = resolve_feature(observation, rule.feature)
             if not all(
                 self._predicate(condition, observation)
                 for condition in rule.activation_conditions
@@ -69,6 +68,7 @@ class TemporalCritic:
                 state.cooldown_remaining = 0
                 state.history.clear()
                 continue
+            value = resolve_feature(observation, rule.feature)
             state.history.append(value)
             if len(state.history) > rule.dwell_steps:
                 state.history.pop(0)

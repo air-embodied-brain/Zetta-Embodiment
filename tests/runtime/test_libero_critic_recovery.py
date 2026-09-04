@@ -29,6 +29,7 @@ environment on a remote Linux GPU host, which is not the responsibility of
 this file.
 """
 
+# Copyright (c) 2026 Zetta Contributors
 from __future__ import annotations
 
 from typing import Any
@@ -194,6 +195,57 @@ def test_hit_rule_populates_proposals_and_interrupts_by_default(
     assert proposals[0]["step_index"] == 2
     assert proposals[0]["environment_write"] is False
     assert outcome.info["critic_rule_count"] == 1
+    core.close()
+
+
+def test_activation_guard_skips_unavailable_primary_feature(
+    stub_rlinf: type[_StubLiberoEnv],
+) -> None:
+    """A false availability guard must protect a missing primary feature.
+
+    ``robot.eef.motion_m`` is intentionally absent on the first physical
+    step, before ``critic_previous_eef`` exists.  The guard is false on that
+    frame, then becomes true together with the feature on the second frame.
+    This exercises the complete online ``LiberoEnvCore.chunk_step`` path.
+
+    Args:
+        stub_rlinf: rlinf stub fixture.
+    """
+    core = _build_core()
+    core.reset(
+        [0],
+        ResetSpec(
+            task_id=0,
+            seed=0,
+            options={
+                "critic_rules": [
+                    {
+                        "rule_id": "eef-motion-available",
+                        "feature": "robot.eef.motion_m",
+                        "operator": "ge",
+                        "threshold": 0.0,
+                        "dwell_steps": 1,
+                        "proposal": "EEF motion became available",
+                        "activation_conditions": [
+                            {
+                                "feature": "robot.eef.delta_available",
+                                "operator": "eq",
+                                "threshold": True,
+                            }
+                        ],
+                    }
+                ]
+            },
+        ),
+    )
+
+    outcome = core.chunk_step([0], [_action_block(5)])[0]
+
+    assert outcome.executed_horizon == 2
+    assert [proposal["rule_id"] for proposal in outcome.info["critic_proposals"]] == [
+        "eef-motion-available"
+    ]
+    assert outcome.info["critic_proposals"][0]["step_index"] == 2
     core.close()
 
 
