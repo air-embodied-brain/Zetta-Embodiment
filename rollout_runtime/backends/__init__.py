@@ -40,7 +40,7 @@ __all__ = [
     "register_env_family_for",
 ]
 
-ENV_BACKENDS = ("fake", "libero", "maniskill", "robocasa", "robotwin")
+ENV_BACKENDS = ("fake", "libero", "maniskill", "robocasa", "robotwin", "geniesim")
 """Env families that actually have an adapter in this build.
 
 Every family declared in ``ENV_FAMILY_BEHAVIORS`` now ships an adapter. The
@@ -75,6 +75,10 @@ def register_env_family_for(env_family: str) -> Any:
         from rollout_runtime.backends.fake.env import register_fake_env_family
 
         return register_fake_env_family(replace=True)
+    if env_family == "geniesim":
+        from rollout_runtime.backends.geniesim import register_geniesim_env_family
+
+        return register_geniesim_env_family(replace=True)
     if env_family == "libero":
         from rollout_runtime.backends.rlinf_env import register_libero_env_family
 

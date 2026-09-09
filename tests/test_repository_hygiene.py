@@ -36,7 +36,8 @@ MARKDOWN_LINK = re.compile(r"!?\[[^]]*\]\((?P<target>[^)\s]+)(?:\s+[^)]*)?\)")
 
 PRIVATE_PATH_PATTERNS = (
     re.compile(r"[A-Za-z]:[\\/]+Users[\\/]+[^\\/\s]+", re.IGNORECASE),
-    re.compile(r"/home/[A-Za-z0-9._-]+"),
+    # Relative asset names can contain "background/home/...".
+    re.compile(r"(?<![A-Za-z0-9._-])/home/[A-Za-z0-9._-]+"),
     re.compile(r"/data[0-9]*/[A-Za-z0-9._-]+"),
     # Generic personal-username segment under /mnt, e.g. /mnt/ssd_data/<user>/...
     # or /mnt/<user>/..., without hardcoding any specific real employee names.
@@ -96,6 +97,26 @@ def _contains_forbidden_legacy_identity(text: str) -> bool:
 
 def test_tracked_runtime_and_docs_have_no_private_machine_paths() -> None:
     assert _matches(PRIVATE_PATH_PATTERNS) == []
+
+
+def test_private_home_path_guard_allows_relative_assets() -> None:
+    for relative_path in (
+        "background/home/home_b_aligned/background.usda",
+        "assets/home/scene.usda",
+        "../home/scene.usda",
+    ):
+        assert not any(
+            pattern.search(relative_path) for pattern in PRIVATE_PATH_PATTERNS
+        ), relative_path
+    for private_path in (
+        "/home/alice/workspace",
+        "file:///home/alice/workspace",
+        'ROOT="/home/alice/workspace"',
+        "--assets-root=/home/alice/assets",
+    ):
+        assert any(pattern.search(private_path) for pattern in PRIVATE_PATH_PATTERNS), (
+            private_path
+        )
 
 
 def test_tracked_runtime_and_docs_have_no_literal_credentials() -> None:

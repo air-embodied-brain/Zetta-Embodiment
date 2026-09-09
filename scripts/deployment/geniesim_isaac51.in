@@ -1,0 +1,14 @@
+# Copyright (c) 2026 Zetta Contributors
+isaacsim[all,extscache]==5.1.0.0
+torch==2.7.0
+numpy==1.26.0
+scipy==1.15.3
+colorama==0.4.6
+future==1.0.0
+PyYAML==6.0.2
+shapely==2.1.1
+trimesh==4.5.1
+rtree==1.3.0
+msgpack==1.1.1
+websockets==12.0
+openai==1.101.0

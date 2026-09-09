@@ -82,6 +82,7 @@ RUNTIME_TOOLING_FILES = frozenset(
         "scripts/deployment/m7_acceptance/rr_eval_batching.py",
         "scripts/deployment/m7_acceptance/rr_serve_overhead.py",
         "scripts/deployment/smoke_cosmos_lite.py",
+        "scripts/deployment/smoke_geniesim.py",
         "scripts/deployment/visualize_robotwin_episode.py",
         "scripts/experiments/run_ab_runtime.py",
         "scripts/experiments/run_concurrency_ab.py",
@@ -127,6 +128,8 @@ allowlist is a tool belonging to runtime itself (in the same category as
 - ``smoke_cosmos_lite.py``: a deployment probe for the optional remote
   Cosmos-Lite policy backend; it exercises Runtime protocol conversion but
   does not enter any legacy robot path.
+- ``smoke_geniesim.py``: exercises the native Runtime environment lifecycle
+  and records hardware evidence; it is not part of a legacy robot path.
 - ``run_concurrency_ab.py``: a **concurrent** A/B driver for legacy vs.
   rollout, where both arms share the same scripted workload definition (no
   planner). The rollout arm installs its own runtime (``launch/`` +
