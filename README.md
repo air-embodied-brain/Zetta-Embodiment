@@ -15,8 +15,9 @@ Zetta is an efficient closed-loop embodied harness for self-evolving physical in
 - [√] **August 20, 2026:** Add RoboCasa support.
 - [√] **August 27, 2026:** Add NVIDIA Cosmos model support.
 - [√] **September 3, 2026:** Add RoboTwin environment support.
-- [ ] **September 10, 2026:** Add ManiSkill environment support.
-- [ ] **September 17, 2026:** Add BEHAVIOR environment support.
+- [√] **September 10, 2026:** Add Genie Sim environment support.
+- [ ] **September 17, 2026:** Add ManiSkill environment support.
+- [ ] **September 20, 2026:** Add BEHAVIOR environment support.
 - [ ] **Ongoing:** Expand model and environment coverage at an approximate cadence of one integration per week.
 
 ## Evolution Protocol
@@ -46,7 +47,7 @@ Runtime role boundaries:
 | Path | Purpose |
 |---|---|
 | `zetta/evolution/` | Immutable manifests, queues, clustering, stages, gates, promotion, and supervision |
-| `rollout_runtime/` | The Rollout Runtime: Gateway, EnvWorker/RolloutWorker groups, and backends for LIBERO/RoboCasa/ManiSkill/RoboTwin |
+| `rollout_runtime/` | The Rollout Runtime: Gateway, EnvWorker/RolloutWorker groups, and backends for LIBERO/RoboCasa/ManiSkill/RoboTwin/Genie Sim |
 | `robots/libero/`, `robots/robocasa/`, `robots/robotwin/` | Env clients, Role1/Critic/Recovery, tools, and rendering contracts |
 | `scripts/evolution/` | Campaign preparation, workers, capacity probes, and plots |
 | `scripts/deployment/` | Service start/stop, VLA env install, and Docker build helpers |
@@ -81,6 +82,16 @@ source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -e ".[test]"
 ```
+
+### Genie Sim / Isaac Sim environment
+
+The native `geniesim` Runtime backend supports the RoboColiseum
+`g2op_if_pick_block_color` task with Isaac Sim 5.1 and an isolated Python 3.11
+simulator process. Use [prepare_geniesim.py](scripts/deployment/prepare_geniesim.py)
+to prepare pinned dependencies and task assets, then run
+[smoke_geniesim.py](scripts/deployment/smoke_geniesim.py) to validate reset,
+joint control, RGB observations, official scoring, and shutdown.
+This single-task environment integration does not include a VLA or evolution campaign.
 
 ### VLA runtime environment (LIBERO-Pro or RoboCasa)
 

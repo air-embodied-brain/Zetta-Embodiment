@@ -1,0 +1,33 @@
+# Native environment smoke. Actions come from the caller's observed joints.
+env_family: geniesim
+env_config:
+  python_executable: /path/to/isaac51/bin/python
+  geniesim_root: /path/to/genie_sim
+  assets_root: /path/to/geniesim_assets
+  output_root: /path/to/geniesim_outputs
+  task: g2op_if_pick_block_color
+  gpu_id: 0
+  max_steps: 32
+  library_paths: []
+
+transport:
+  kind: inproc
+  command_timeout_seconds: 1800.0
+
+gateway:
+  default_lease_seconds: 3600.0
+  heartbeat_timeout_seconds: 1800.0
+
+env_worker:
+  num_ranks: 1
+  placement_strategy: packed
+  default_pool_size: 1
+  max_sessions_per_rank: 1
+
+rollout_worker:
+  num_ranks: 1
+  policy_backend: fake
+  device: cpu
+
+admission:
+  max_sessions_per_application: 1

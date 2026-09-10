@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zetta Contributors
 """The env family registry.
 
 ``EnvFamilyAdapter`` absorbs family differences (reset signature,
@@ -38,6 +39,7 @@ from rollout_runtime.core.env_execution import (
 __all__ = [
     "ENV_FAMILY_BEHAVIORS",
     "ENV_FAMILY_REGISTRY",
+    "GENIESIM_ENV_FAMILY",
     "LIBERO_ENV_FAMILY",
     "MANISKILL_ENV_FAMILY",
     "ROBOCASA_ENV_FAMILY",
@@ -53,6 +55,8 @@ __all__ = [
     "requested_core_form",
     "validate_env_spec",
 ]
+
+GENIESIM_ENV_FAMILY = "geniesim"
 
 LIBERO_ENV_FAMILY = "libero"
 """The libero family name (the only real family shipped initially)."""
@@ -150,6 +154,19 @@ paths.
 """
 
 ENV_FAMILY_BEHAVIORS: dict[str, EnvFamilyBehavior] = {
+    GENIESIM_ENV_FAMILY: EnvFamilyBehavior(
+        env_family=GENIESIM_ENV_FAMILY,
+        env_type="geniesim_native",
+        reset_signature="seed_options",
+        chunk_obs_layout="per_step",
+        action_layout="numpy_env_chunk_dim",
+        device_kind="cpu_subproc",
+        needs_accelerator_override=True,
+        extensions=frozenset({"geniesim.result"}),
+        core_forms=frozenset({PER_SLOT_FORM}),
+        max_pool_size=1,
+        obs_extraction="Genie PiEnv observation -> supervised IPC -> Observation",
+    ),
     LIBERO_ENV_FAMILY: EnvFamilyBehavior(
         env_family=LIBERO_ENV_FAMILY,
         env_type="libero",
