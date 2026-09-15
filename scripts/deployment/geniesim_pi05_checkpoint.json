@@ -1,0 +1,111 @@
+{
+  "repository": "agibot_world/GenieSim3.0-Dataset",
+  "revision": "a7792c06746330fb4f566dee8787cb2b4da2200d",
+  "path": "checkpoints/instruction_and_robust_pi05",
+  "files": {
+    "_CHECKPOINT_METADATA": {
+      "sha256": "4f80d5485269ca24130f9ca8444a230daa8427e135a44f97ff139b57c1227238",
+      "bytes": 426
+    },
+    "assets/norm_stats.json": {
+      "sha256": "d340fd083679e3a7e76ec93b68abe15aad78d47fe5ef4dcfe97cb57070b853b8",
+      "bytes": 5785
+    },
+    "params/_METADATA": {
+      "sha256": "6d5a6eefc73215c59bea485f1e480cef98dd6f07583e41ff1ae0d6ca35effd7e",
+      "bytes": 23497
+    },
+    "params/_sharding": {
+      "sha256": "0aa89c2ac0ba6f33fd71c0a934a1b0e30b2a223619ef8ed916dfdf82f0899ae1",
+      "bytes": 18152
+    },
+    "params/array_metadatas/process_0": {
+      "sha256": "a2d2013a511ccb4e3a0fc6fdd05d324aa526aebb96db94d3fea723bf9f1509fe",
+      "bytes": 9070
+    },
+    "params/d/a9730d773a970ac29ca9a7109f275ae3": {
+      "sha256": "0a6a585389c30bb716adbcddf3f510254b705c02a5aad9001da46a1c7a479ec9",
+      "bytes": 41289
+    },
+    "params/manifest.ocdbt": {
+      "sha256": "f2d635f2fc9dbed80d35626717da40965dfd55136ece7115fd253fcfc15f1322",
+      "bytes": 120
+    },
+    "params/ocdbt.process_0/d/05eb7ed3678a269cb0e888e8011c4ad0": {
+      "sha256": "239a15e3988e4c1393044f3ba4da2aed49914d8b5e857d6f5516b38d98d21bab",
+      "bytes": 369265784
+    },
+    "params/ocdbt.process_0/d/0ef3a8d72c9168a298adc4f5b94caec3": {
+      "sha256": "2f6e802be94e33081f07721d917db62f30e67365e14e0d4d2d1e87844e1067f2",
+      "bytes": 2307746032
+    },
+    "params/ocdbt.process_0/d/1342555e18a8efb45c457d1a280b47f3": {
+      "sha256": "f174e8db79099635984ab6680386dac560045b698c92c72f1ea3148c457b8c71",
+      "bytes": 209859071
+    },
+    "params/ocdbt.process_0/d/2aa79edbfccd6c68dd2f8bba0857754f": {
+      "sha256": "290639fd8688e0661547e585158bed81ed4c5bde7164149eef8b177b35b8ea77",
+      "bytes": 7792957
+    },
+    "params/ocdbt.process_0/d/3d405252923fd294f1207befdeac1be3": {
+      "sha256": "f04de6859ad81f6e8427232a8fbe232c67653afde5b61e348c07cc92374efa51",
+      "bytes": 521788310
+    },
+    "params/ocdbt.process_0/d/428a2d9c356be1787b19f3a081ca0940": {
+      "sha256": "1fed86fb376144ce8d219080b94f2361cf205433d20ae4bdb9a39aaa11f0f503",
+      "bytes": 251422591
+    },
+    "params/ocdbt.process_0/d/4e31444d37b3ed92c7b6e4c4b54eccff": {
+      "sha256": "54cb8825d912a1cb64cfe71a1733d1ff4096c1d33ae428b3c31fd256e220c592",
+      "bytes": 730932441
+    },
+    "params/ocdbt.process_0/d/575e8e9f6a064d15791d7e241a9fc10c": {
+      "sha256": "b3d3862a0514086063bc396d27f6f45f3fb77ab04aac1b3316fa16e582f45f72",
+      "bytes": 518741130
+    },
+    "params/ocdbt.process_0/d/6a822014a8be443be0800dc6980b833b": {
+      "sha256": "2cabe359dd441e1c92add0d9128fc575d9cf093e9382bc77a84bf22a9ef817d6",
+      "bytes": 1679724318
+    },
+    "params/ocdbt.process_0/d/6ae59403166d275f934bac79007e9aa8": {
+      "sha256": "1e99d5876e6b8db2e12c43c8079f6b98cffac2c26bbd84e59cc505e983d146d2",
+      "bytes": 217
+    },
+    "params/ocdbt.process_0/d/6fe09bdfb75cd67a31f4feb7457ec58e": {
+      "sha256": "bcb9fc63a93aff3d211ea27677a1754eaf2a4e166009ffe405ffba03e589a52b",
+      "bytes": 2204687665
+    },
+    "params/ocdbt.process_0/d/7e6d3eaf60fa1f929f885d02e742e621": {
+      "sha256": "3961266934765addf347578ae3096ea52146f380cbf22164826d29c15c204f41",
+      "bytes": 5574
+    },
+    "params/ocdbt.process_0/d/9124d95f5cddd0ed9283ff6716edc7d9": {
+      "sha256": "e65d03f47abc9df9785faa05457d63ee581f4e8f3f50031e8b13272a26589978",
+      "bytes": 194171837
+    },
+    "params/ocdbt.process_0/d/91af06e7146ec1fa92b11f0f2506f48d": {
+      "sha256": "8162386bf336069bda675e287a6689a6e5c9713987081291b25620ddfaeb2918",
+      "bytes": 69925086
+    },
+    "params/ocdbt.process_0/d/b9ed60a0fe3e2207ca2b33c2218dd0cd": {
+      "sha256": "94532274e4396a8307a8381e28d7c7de836cf58edc3959e33ebbece1481d9f63",
+      "bytes": 244703725
+    },
+    "params/ocdbt.process_0/d/cfdb6e00668a64114f235a115bce2a7d": {
+      "sha256": "db2f16cc58d2f6741a647e0c8b3981b5022a2f933220a6ac2e28321559bf6f1c",
+      "bytes": 1083
+    },
+    "params/ocdbt.process_0/d/e7dbe4791baf455411ac72ebe1842b0c": {
+      "sha256": "9b01d9df9fde1fce3437bea35c341f8dec240d56dec9e867648742534a795add",
+      "bytes": 2239638163
+    },
+    "params/ocdbt.process_0/d/ee06e32728d3c0dd581864c962a2a3a9": {
+      "sha256": "8387e558b254aaf5071d3bcde6fdb08405c2899795709946bcbfc169567acd61",
+      "bytes": 889476082
+    },
+    "params/ocdbt.process_0/manifest.ocdbt": {
+      "sha256": "59e5ce8b6fa7a2cb0eb0e9d83de6adc84537a43c9f474c0917ff13d11d462439",
+      "bytes": 770
+    }
+  }
+}

@@ -9,6 +9,7 @@ import json
 import os
 import socket
 import struct
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -183,6 +184,32 @@ def test_request_failure_reaps_without_replay(config, monkeypatch, mode):
     assert evidence["returncode"] is not None
     assert len((process.directory / "received.jsonl").read_text().splitlines()) == 1
     process.close()
+
+
+@pytest.mark.parametrize("exits", [True, False])
+def test_abort_waits_for_exit_after_process_group_permission_race(monkeypatch, exits):
+    process = object.__new__(GenieSimProcess)
+    process._process = Mock(pid=12345)
+    process._process.poll.return_value = None
+    process._process.wait.side_effect = (
+        [0] if exits else subprocess.TimeoutExpired("worker", 5)
+    )
+    process._channel = Mock()
+    process._record = Mock()
+    monkeypatch.setattr(
+        os, "killpg", Mock(side_effect=PermissionError("exiting group"))
+    )
+    if exits:
+        process._abort("request failed")
+        process._process.wait.assert_called_once_with(timeout=5)
+        process._record.assert_called_once_with(
+            "failed", forced=True, error="request failed"
+        )
+        process._channel.close.assert_called_once()
+    else:
+        with pytest.raises(subprocess.TimeoutExpired):
+            process._abort("request failed")
+        process._record.assert_not_called()
 
 
 @pytest.mark.parametrize(

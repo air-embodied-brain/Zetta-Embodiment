@@ -212,6 +212,22 @@ _PRIVATE_EVIDENCE_KEYS = {
 }
 
 _COLLISION_CONTROL = re.compile(r"\bcollision(?:s)?\b", re.IGNORECASE)
+# Safety prose may mention collision telemetry while explicitly prohibiting its
+# use. Keep this narrow: only phrases that negate using/acting on collision
+# output are exempt; positive stop/branch/trigger instructions remain blocked.
+_NEGATED_COLLISION_CONTROL = re.compile(
+    r"(?:"
+    r"\b(?:do\s+not|don't|must\s+not|never|without|no)\b"
+    r"[^.!?;\n]*\bcollision(?:s)?\b"
+    r"[^.!?;\n]*\b(?:control|gate|trigger|stop|activation|output|signal|condition|feature|telemetry|detector)\b"
+    r"|\bcollision(?:s)?\b"
+    r"[^.!?\n]*\b(?:not|never|without|no)\b"
+    r"[^.!?\n]*\b(?:used?|provided|control|gate|trigger|stop|activation|signal|condition|feature|telemetry|detector)\b"
+    r"|\bcollision(?:s)?\b"
+    r"[^.!?\n]*\b(?:diagnostic(?:ally)?\s+only|is\s+not)\b"
+    r")",
+    re.IGNORECASE,
+)
 
 
 def _validate_recovery_chunk_policy(candidate: CandidateBundle) -> None:
@@ -308,11 +324,17 @@ def _reject_collision_control(candidate: CandidateBundle) -> None:
                 *(step.stop_when for step in recovery.steps),
             )
         )
-    if any(_COLLISION_CONTROL.search(text) for text in control_text):
-        raise ValueError(
-            "collision telemetry is diagnostic-only and cannot be a hard "
-            "Critic/Recovery control signal"
-        )
+    for text in control_text:
+        if not _COLLISION_CONTROL.search(text):
+            continue
+        # A candidate may document the diagnostic-only boundary in prose, but
+        # any remaining collision mention is treated as an online control.
+        scrubbed = _NEGATED_COLLISION_CONTROL.sub("", text)
+        if _COLLISION_CONTROL.search(scrubbed):
+            raise ValueError(
+                "collision telemetry is diagnostic-only and cannot be a hard "
+                "Critic/Recovery control signal"
+            )
 
 
 def _extract_json_object(text: str) -> dict[str, Any]:
@@ -1092,8 +1114,6 @@ class CodexStageAgent:
         payload_sha256 = canonical_sha256(payload)
         if input_path.is_file():
             if canonical_sha256(read_json(input_path)) != payload_sha256:
-                if output_path.is_file() or context_path.is_file():
-                    raise ValueError(f"{stage} input changed after successful commit")
                 revisions = sorted(invocation.glob("input-recovery-*.json"))
                 matching = [
                     path
@@ -1104,6 +1124,8 @@ class CodexStageAgent:
                     raise ValueError(f"{stage} has duplicate recovery input bindings")
                 if matching:
                     active_input_path = matching[0]
+                elif output_path.is_file() or context_path.is_file():
+                    raise ValueError(f"{stage} input changed after successful commit")
                 else:
                     active_input_path = (
                         invocation / f"input-recovery-{len(revisions):03d}.json"
@@ -1849,6 +1871,16 @@ class CodexStageAgent:
                 else None
             ),
             "tool_catalog": tool_catalog,
+            "environment_contract": (
+                {
+                    "step_stop_when_exact": "budget_exhausted_or_success",
+                    "recovery_stop_condition_exact": "official_success_or_budget",
+                    "recovery_fallback_exact": "resume_vla",
+                    "exactly_one_critic_recovery_pair": True,
+                }
+                if self.environment_name == "geniesim"
+                else None
+            ),
             "frozen_parent_bundle": (
                 parent_bundle.as_dict() if parent_bundle is not None else None
             ),
@@ -1906,12 +1938,24 @@ class CodexStageAgent:
                                     "actions_per_chunk": "5 by default; 1 only with "
                                     "per-action boundary evidence"
                                 },
-                                "stop_when": "string",
+                                "stop_when": (
+                                    "exact literal budget_exhausted_or_success"
+                                    if self.environment_name == "geniesim"
+                                    else "string"
+                                ),
                             }
                         ],
                         "safety_constraints": ["string"],
-                        "stop_condition": "string",
-                        "fallback": "string",
+                        "stop_condition": (
+                            "exact literal official_success_or_budget"
+                            if self.environment_name == "geniesim"
+                            else "string"
+                        ),
+                        "fallback": (
+                            "exact literal resume_vla"
+                            if self.environment_name == "geniesim"
+                            else "string"
+                        ),
                         "evidence_ids": ["string"],
                     }
                 ],

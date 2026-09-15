@@ -1,0 +1,47 @@
+# Genie Sim G2 JOINT_ABS service, using the pinned CoRobot protocol.
+env_family: geniesim
+env_config:
+  python_executable: /path/to/isaac51/bin/python
+  geniesim_root: /path/to/genie_sim
+  assets_root: /path/to/geniesim_assets
+  output_root: /path/to/geniesim_outputs
+  task: g2op_if_pick_block_color
+  gpu_id: 0
+  max_steps: 300
+  library_paths: []
+
+transport:
+  kind: inproc
+  command_timeout_seconds: 1800.0
+
+gateway:
+  default_lease_seconds: 3600.0
+  heartbeat_timeout_seconds: 1800.0
+
+env_worker:
+  num_ranks: 1
+  placement_strategy: packed
+  default_pool_size: 1
+  max_sessions_per_rank: 1
+
+rollout_worker:
+  num_ranks: 1
+  placement_strategy: node
+  policy_id: geniesim_vla
+  policy_family: geniesim_vla
+  policy_backend: geniesim_vla
+  device: cpu
+  dtype: float32
+  max_concurrent_inferences: 1
+  policy_config:
+    endpoint: ws://127.0.0.1:8999
+    model_version: replace-with-checkpoint-revision
+    action_dim: 16
+    actions_per_chunk: 5
+    require_policy_rng_ack: true
+  scheduler:
+    max_batch_size: 1
+    max_wait_ms: 0
+
+admission:
+  max_sessions_per_application: 1

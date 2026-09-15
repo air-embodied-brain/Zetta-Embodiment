@@ -365,6 +365,23 @@ def _validate(config: RuntimeConfig) -> None:
             "declare a live rank lost, and LOST sessions are not recoverable"
         )
     rollout = config.rollout_worker
+    if rollout.policy_backend == "geniesim_vla":
+        if config.env_family != "geniesim" or rollout.policy_family != "geniesim_vla":
+            raise ValueError(
+                "geniesim_vla requires geniesim env and geniesim_vla policy family"
+            )
+        if (
+            rollout.num_ranks != 1
+            or rollout.max_concurrent_inferences != 1
+            or rollout.scheduler.max_batch_size != 1
+            or rollout.scheduler.max_wait_ms != 0
+            or config.env_worker.num_ranks != 1
+            or config.env_worker.default_pool_size != 1
+            or config.env_worker.max_sessions_per_rank != 1
+        ):
+            raise ValueError(
+                "geniesim_vla requires one env slot and serialized batch-one inference"
+            )
     if rollout.policy_backend == "cosmos_lite":
         if rollout.policy_family != "cosmos_lite":
             raise ValueError(

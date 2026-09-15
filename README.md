@@ -91,7 +91,10 @@ simulator process. Use [prepare_geniesim.py](scripts/deployment/prepare_geniesim
 to prepare pinned dependencies and task assets, then run
 [smoke_geniesim.py](scripts/deployment/smoke_geniesim.py) to validate reset,
 joint control, RGB observations, official scoring, and shutdown.
-This single-task environment integration does not include a VLA or evolution campaign.
+The `geniesim_vla` backend adds the G2 CoRobot WebSocket policy protocol, and
+`prepare_geniesim_campaign.py` freezes VLA rollout and candidate gate commands.
+See [Genie Sim VLA and Campaign](docs/geniesim-vla.md) for the model-service
+contract, deployment, evidence, and current single-task limits.
 
 ### VLA runtime environment (LIBERO-Pro or RoboCasa)
 

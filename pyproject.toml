@@ -60,6 +60,7 @@ test = [
     "imageio-ffmpeg>=0.5,<1",
     "scipy>=1.10,<2",
     "zetta[runtime]",
+    "zetta[geniesim-vla]",
 ]
 runtime = [
     "gym==0.26.2",
@@ -76,6 +77,11 @@ openpi = [
 ]
 cosmos-lite = [
     "websockets>=11,<17",
+]
+geniesim-vla = [
+    "websockets>=14,<17",
+    "pillow>=10",
+    "imageio-ffmpeg>=0.5,<1",
 ]
 libero = []
 # Simulator distributions are intentionally not declared here: liberopro and

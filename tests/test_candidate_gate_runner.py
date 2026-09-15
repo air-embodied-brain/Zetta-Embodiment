@@ -289,6 +289,7 @@ def _setup(
     seeds: tuple[int, ...] = (11, 12),
     reuse_parent_evidence: bool = False,
     max_infrastructure_attempts: int = 3,
+    max_candidate_rounds_per_cluster: int | None = None,
 ) -> tuple[Path, Path, CampaignStore, CandidateBundle]:
     root = tmp_path / "campaign"
     queue_root = tmp_path / "queue"
@@ -297,6 +298,16 @@ def _setup(
         reuse_parent_evidence=reuse_parent_evidence,
         max_infrastructure_attempts=max_infrastructure_attempts,
     )
+    if max_candidate_rounds_per_cluster is not None:
+        manifest = replace(
+            manifest,
+            runtime={
+                **manifest.runtime,
+                "evolution_policy": {
+                    "max_candidate_rounds_per_cluster": max_candidate_rounds_per_cluster,
+                },
+            },
+        )
     store = CampaignStore(root)
     store.initialize(manifest)
     for index, seed in enumerate(seeds):
@@ -715,6 +726,51 @@ def test_normal_zero_score_is_valid_and_advances_as_failed_gate(tmp_path: Path) 
     assert result["decision"]["candidate_successes"] == 0
     assert result["decision"]["passed"] is False
     assert CampaignStore(root).state()["phase"] == CampaignPhase.PROPOSE
+
+
+def test_last_rejected_candidate_returns_terminal_status_after_candidate_cleared(
+    tmp_path: Path,
+) -> None:
+    root, queue_root, store, candidate = _setup(
+        tmp_path, seeds=(11,), max_candidate_rounds_per_cluster=1
+    )
+    hosts = ("host-a",)
+    runner = CandidateGateRunner(
+        campaign_root=root,
+        queue_root=queue_root,
+        worker_hosts=hosts,
+    )
+    runner.run_once()
+    queue = SharedHostQueue(queue_root)
+    _finish_pending(queue, hosts, lambda job: _gate_episode(job, success=False))
+
+    result = runner.run_once()
+
+    assert store.state()["phase"] == CampaignPhase.COMPLETE
+    assert store.state()["candidate_sha256"] is None
+    assert (
+        store.state()["optimization_outcome"]
+        == "no_candidate_passed_primary_or_secondary"
+    )
+    assert result["decision"]["passed"] is False
+    assert result["decision"]["conclusive"] is True
+    assert result["terminal_decision"] == result["decision"]
+    assert result["status"]["decision"] == result["decision"]
+    assert result["status"]["campaign_phase"] == CampaignPhase.COMPLETE
+    assert result["status"]["candidate_sha256"] == candidate.sha256
+    assert result["status"]["valid_arms"] == 2
+    assert result["status"]["complete_pairs"] == 1
+    assert result["status"]["queue"] == queue.counts()
+    assert result["enqueue"]["enqueued"] == 0
+    assert len(store.gates.records()) == 1
+
+    attempts = runner.attempts.records()
+    counts = queue.counts()
+    with pytest.raises(StaleCandidateError, match="stale"):
+        runner.run_once()
+    assert runner.attempts.records() == attempts
+    assert queue.counts() == counts
+    assert len(store.gates.records()) == 1
 
 
 def test_same_seed_gate_rejects_early_when_success_upper_bound_is_impossible(

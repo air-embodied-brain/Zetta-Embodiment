@@ -93,6 +93,47 @@ def _same_physical_reset(
 
     candidate_state = candidate_identity.get("state_sha256")
     parent_state = parent_identity.get("state_sha256")
+    contract = "geniesim_g2_joint_reset_v1"
+    if any(
+        identity.get("comparison_contract") == contract
+        for identity in (candidate_identity, parent_identity)
+    ):
+        for identity in (candidate_identity, parent_identity):
+            if identity.get("comparison_contract") != contract:
+                raise ValueError("paired Genie Sim reset contracts differ")
+            joints = identity.get("joint_positions")
+            scenario = identity.get("scenario_sha256")
+            if (
+                not isinstance(joints, list)
+                or len(joints) != 21
+                or any(
+                    isinstance(value, bool)
+                    or not isinstance(value, (int, float))
+                    or not math.isfinite(value)
+                    for value in joints
+                )
+                or identity.get("state_sha256") != canonical_sha256(joints)
+                or not isinstance(scenario, str)
+                or len(scenario) != 64
+            ):
+                raise ValueError("invalid Genie Sim reset identity")
+        same_scenario = (
+            candidate_identity["scenario_sha256"] == parent_identity["scenario_sha256"]
+        )
+        # The pinned native adapter settles every joint within 0.01 rad.
+        # Two settled resets can therefore differ by at most 0.02 rad.
+        same_joints = all(
+            abs(left - right) <= 0.02
+            for left, right in zip(
+                candidate_identity["joint_positions"],
+                parent_identity["joint_positions"],
+                strict=True,
+            )
+        )
+        camera_mismatch = canonical_sha256(
+            candidate_identity.get("camera_sha256", {})
+        ) != canonical_sha256(parent_identity.get("camera_sha256", {}))
+        return same_scenario and same_joints, camera_mismatch
     if candidate_state is None and parent_state is None:
         return (
             canonical_sha256(candidate_identity) == canonical_sha256(parent_identity),

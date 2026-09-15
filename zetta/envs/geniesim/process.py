@@ -224,14 +224,16 @@ class GenieSimProcess:
         if forced:
             try:
                 os.killpg(process.pid, signal.SIGTERM)
-            except ProcessLookupError:
+            except (ProcessLookupError, PermissionError):
+                # macOS can report EPERM for an exiting process group. The
+                # bounded wait below must still prove that the child exited.
                 pass
             try:
                 process.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 try:
                     os.killpg(process.pid, signal.SIGKILL)
-                except ProcessLookupError:
+                except (ProcessLookupError, PermissionError):
                     pass
                 process.wait(timeout=5)
         if self._channel is not None:

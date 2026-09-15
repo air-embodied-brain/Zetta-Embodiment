@@ -48,6 +48,7 @@ RUNTIME_INJECTION_POINTS = frozenset(
         "robots/libero/run_evolution_rollout.py",
         "robots/robocasa/run_rollout.py",
         "robots/robotwin/run_rollout.py",
+        "robots/geniesim/run_rollout.py",
     }
 )
 """The only files on the zetta / robots side allowed to ``import rollout_runtime``.
@@ -70,6 +71,9 @@ RUNTIME_INJECTION_POINTS = frozenset(
 New entries must also explain why they are a deliberate, application-initiated
 injection point rather than accidental coupling."""
 
+# Genie Sim's run_rollout.py is its sole application-owned Runtime entrypoint;
+# its frozen tool and recovery contracts remain independent of Runtime.
+
 RUNTIME_TOOLING_FILES = frozenset(
     {
         "scripts/deployment/runtime_parity_trace.py",
@@ -83,6 +87,7 @@ RUNTIME_TOOLING_FILES = frozenset(
         "scripts/deployment/m7_acceptance/rr_serve_overhead.py",
         "scripts/deployment/smoke_cosmos_lite.py",
         "scripts/deployment/smoke_geniesim.py",
+        "scripts/deployment/smoke_geniesim_vla.py",
         "scripts/deployment/visualize_robotwin_episode.py",
         "scripts/experiments/run_ab_runtime.py",
         "scripts/experiments/run_concurrency_ab.py",
@@ -130,6 +135,8 @@ allowlist is a tool belonging to runtime itself (in the same category as
   does not enter any legacy robot path.
 - ``smoke_geniesim.py``: exercises the native Runtime environment lifecycle
   and records hardware evidence; it is not part of a legacy robot path.
+- ``smoke_geniesim_vla.py``: validates native VLA protocol and paired Campaign
+  episodes through Runtime, as a deployment probe outside the legacy paths.
 - ``run_concurrency_ab.py``: a **concurrent** A/B driver for legacy vs.
   rollout, where both arms share the same scripted workload definition (no
   planner). The rollout arm installs its own runtime (``launch/`` +

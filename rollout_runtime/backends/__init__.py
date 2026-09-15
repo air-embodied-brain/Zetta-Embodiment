@@ -54,7 +54,7 @@ the family is registered unconditionally and a missing package surfaces as an
 ``ENV_FAILURE`` from ``build`` rather than as a missing family.
 """
 
-POLICY_BACKENDS = ("fake", "zetta_openpi", "groot", "cosmos_lite")
+POLICY_BACKENDS = ("fake", "zetta_openpi", "groot", "cosmos_lite", "geniesim_vla")
 """Optional policy backends, including remote Cosmos-Lite serving."""
 
 
@@ -188,6 +188,18 @@ def build_policy_core(
         if model_version:
             merged.setdefault("model_version", model_version)
         return GrootPolicyCore(GrootPolicyConfig.from_mapping(merged))
+    if backend == "geniesim_vla":
+        from rollout_runtime.backends.geniesim_policy import (
+            GenieSimPolicyConfig,
+            GenieSimPolicyCore,
+        )
+
+        merged = dict(policy_config or {})
+        merged.setdefault("device", device)
+        merged.setdefault("dtype", dtype)
+        if model_version:
+            merged.setdefault("model_version", model_version)
+        return GenieSimPolicyCore(GenieSimPolicyConfig.from_mapping(merged))
     if backend == "cosmos_lite":
         from rollout_runtime.backends.cosmos_lite import (
             CosmosLitePolicyConfig,
@@ -229,6 +241,12 @@ def policy_compat_constraints(
         (GR00T does not support cuda_graph/fixed batch; single-request
         serialized inference needs no additional hard constraints).
     """
+    if backend == "geniesim_vla":
+        from rollout_runtime.backends.geniesim_policy import GenieSimPolicyConfig
+
+        return GenieSimPolicyConfig.from_mapping(
+            dict(policy_config or {})
+        ).compat_key_constraints()
     if backend == "cosmos_lite":
         from rollout_runtime.backends.cosmos_lite import CosmosLitePolicyConfig
 

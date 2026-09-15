@@ -1681,12 +1681,26 @@ class PairedGateRunner:
             }
         parent_adopted = self._adopt_frozen_parent_evidence(plan)
         ingestion = self.ingest()
+        # Finalization can clear the active candidate when its budget is exhausted
+        # or the campaign switches clusters. Preserve its validated gate evidence
+        # before advancing, without weakening stale-candidate mutation checks.
+        status_before_finalize = self.status()
         decision = self.finalize_if_complete()
         terminal_decision = self._recorded_decision()
         enqueue = (
             {"enqueued": 0, "blocked": [], "queue": self.queue.counts()}
             if terminal_decision is not None
             else self.enqueue_missing()
+        )
+        status = (
+            {
+                **status_before_finalize,
+                "decision": terminal_decision.as_dict(),
+                "campaign_phase": self.store.state()["phase"],
+                "queue": self.queue.counts(),
+            }
+            if terminal_decision is not None
+            else self.status()
         )
         return {
             "ingestion": ingestion,
@@ -1696,7 +1710,7 @@ class PairedGateRunner:
             "terminal_decision": (
                 terminal_decision.as_dict() if terminal_decision else None
             ),
-            "status": self.status(),
+            "status": status,
             "updated_at": _utc_now(),
         }
 

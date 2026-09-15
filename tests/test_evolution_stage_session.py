@@ -237,6 +237,35 @@ def test_safety_constraint_may_explicitly_forbid_collision_detector_control() ->
     _reject_collision_control(candidate)
 
 
+def test_recovery_text_may_forbid_collision_control_without_being_rejected() -> None:
+    diagnosis = CausalDiagnosis(**_diagnosis_payload())
+    payload = _candidate_payload()
+    payload["recovery_rules"][0]["stop_condition"] = (
+        "Do not use collision-detector output for activation or stopping."
+    )
+    candidate = _candidate_from_payload(
+        payload,
+        generation=0,
+        parent_sha256=None,
+        diagnosis=diagnosis,
+    )
+    _reject_collision_control(candidate)
+
+
+def test_recovery_text_that_stops_on_collision_is_rejected() -> None:
+    diagnosis = CausalDiagnosis(**_diagnosis_payload())
+    payload = _candidate_payload()
+    payload["recovery_rules"][0]["stop_condition"] = "Stop on collision."
+    candidate = _candidate_from_payload(
+        payload,
+        generation=0,
+        parent_sha256=None,
+        diagnosis=diagnosis,
+    )
+    with pytest.raises(ValueError, match="diagnostic-only"):
+        _reject_collision_control(candidate)
+
+
 def test_vla_recovery_one_action_chunk_requires_latency_justification() -> None:
     diagnosis = CausalDiagnosis(**_diagnosis_payload())
     payload = _candidate_payload()

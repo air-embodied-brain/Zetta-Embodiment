@@ -102,6 +102,16 @@ def _authoritative_task_contract(store: CampaignStore) -> dict[str, Any] | None:
         raise ValueError("task_contract.language_sha256 does not match language")
     return contract
 
+
+def _validate_environment_candidate(
+    store: CampaignStore, candidate: CandidateBundle
+) -> None:
+    """Apply the environment's frozen bundle contract before registration."""
+    if store.manifest().environment == "geniesim":
+        from robots.geniesim.contracts import validate_bundle
+
+        validate_bundle(candidate)
+
 _DIAGNOSTIC_TELEMETRY_FEATURES = (
     "episode.step_index",
     "episode.reward",
@@ -4475,6 +4485,7 @@ def _run_proposal_stage_locked(
         refinement_context=refinement_context,
         provisional_hypothesis=provisional,
     )
+    _validate_environment_candidate(store, candidate)
     allowed = _frozen_tool_names(tool_catalog)
     selected = {step.tool for rule in candidate.recovery_rules for step in rule.steps}
     unknown = selected - allowed
