@@ -181,6 +181,8 @@ def test_validation_heldout_failure_obeys_round_limit(tmp_path: Path) -> None:
     assert store.state()["optimization_outcome"] == (
         "heldout_validation_iteration_budget_exhausted"
     )
+    with pytest.raises(ValueError, match="promotion requires promote phase"):
+        store.promote(candidate.sha256)
 
 
 def test_same_seed_failure_obeys_explicit_round_limit(tmp_path: Path) -> None:
