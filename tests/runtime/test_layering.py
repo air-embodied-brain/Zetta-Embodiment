@@ -49,6 +49,7 @@ RUNTIME_INJECTION_POINTS = frozenset(
         "robots/robocasa/run_rollout.py",
         "robots/robotwin/run_rollout.py",
         "robots/geniesim/run_rollout.py",
+        "robots/maniskill/run_rollout.py",
     }
 )
 """The only files on the zetta / robots side allowed to ``import rollout_runtime``.
@@ -73,6 +74,7 @@ injection point rather than accidental coupling."""
 
 # Genie Sim's run_rollout.py is its sole application-owned Runtime entrypoint;
 # its frozen tool and recovery contracts remain independent of Runtime.
+# ManiSkill follows the same boundary; its task contract and Role1 do not import Runtime.
 
 RUNTIME_TOOLING_FILES = frozenset(
     {
@@ -88,6 +90,8 @@ RUNTIME_TOOLING_FILES = frozenset(
         "scripts/deployment/smoke_cosmos_lite.py",
         "scripts/deployment/smoke_geniesim.py",
         "scripts/deployment/smoke_geniesim_vla.py",
+        "scripts/deployment/smoke_maniskill.py",
+        "scripts/deployment/smoke_maniskill_runtime.py",
         "scripts/deployment/visualize_robotwin_episode.py",
         "scripts/experiments/run_ab_runtime.py",
         "scripts/experiments/run_concurrency_ab.py",
@@ -103,6 +107,8 @@ allowlist is a tool belonging to runtime itself (in the same category as
 ``runtime_ci.sh``), and of course they import ``rollout_runtime``:
 
 - ``runtime_transport_spike.py``: a quantitative baseline tool;
+- ``smoke_maniskill.py``: native simulator/Runtime parity and lifecycle acceptance;
+- ``smoke_maniskill_runtime.py``: real Ray worker and Gateway replay acceptance;
 - ``runtime_parity_trace.py``: a single-arm data-collection tool for parity
   checks (each arm runs its own process; see the module docstring of
   ``test_legacy_parity.py``);

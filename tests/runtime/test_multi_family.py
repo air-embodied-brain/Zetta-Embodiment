@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zetta Contributors
 """Divergences and the two execution forms of the new maniskill family.
 
 ``.venv-runtime`` does not have mani_skill / robosuite, so this uses a minimal
@@ -27,8 +28,6 @@ from typing import Any
 import numpy as np
 import pytest
 
-torch = pytest.importorskip("torch")
-
 from rollout_runtime.api.enums import ErrorCode
 from rollout_runtime.api.errors import RuntimeApiError
 from rollout_runtime.api.messages import EnvSpecMsg, ResetSpec
@@ -38,6 +37,8 @@ from rollout_runtime.core.env_execution import (
 )
 from rollout_runtime.core.env_registry import behavior_for
 from tests.runtime.libero_stub import stub_module
+
+torch = pytest.importorskip("torch")
 
 ACTION_DIM = 7
 IMAGE = 8
@@ -187,7 +188,7 @@ class _StubManiskillEnv:
             torch.full((self.num_envs,), 0.5, dtype=torch.float32),
             terminated,
             torch.zeros(self.num_envs, dtype=torch.bool),
-            {},
+            {"success": terminated.clone()},
         )
 
     def close(self) -> None:
@@ -304,7 +305,7 @@ def test_maniskill_reset_uses_the_seed_options_signature(
     env = core._envs[0]
     assert env.is_start is False, "is_start must be cleared at build"
     call = env.reset_calls[-1]
-    assert call["seed"] == [7, 8]
+    assert call["seed"] == [7, 7]
     assert [int(item) for item in call["options"]["env_idx"]] == [0, 1]
     # 5-key schema: uint8 HWC main view + float32 state + non-empty instruction.
     assert observations[0].main_image is not None
@@ -360,6 +361,147 @@ def test_maniskill_chunk_stops_at_the_first_termination(
     assert outcome.executed_horizon == 2
     assert outcome.terminated is True
     assert outcome.info["requested_horizon"] == 3
+    core.close()
+
+
+@pytest.mark.parametrize("core_form", [PER_SLOT_FORM, LOCKSTEP_VECTOR_FORM])
+def test_maniskill_preserves_official_failure_instead_of_scoring_termination(
+    stub_families: dict[str, type], core_form: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from rollout_runtime.backends.rlinf_maniskill import ManiskillEnvCore
+
+    original = stub_families["maniskill"].step
+
+    def fail(self, actions, auto_reset=True):
+        obs, reward, terminated, truncated, _ = original(self, actions, auto_reset)
+        terminated[:] = True
+        return (
+            obs,
+            reward,
+            terminated,
+            truncated,
+            {
+                "success": torch.tensor([False]),
+                "fail": torch.tensor([True]),
+            },
+        )
+
+    monkeypatch.setattr(stub_families["maniskill"], "step", fail)
+    core = ManiskillEnvCore()
+    core.build(maniskill_spec(core_form=core_form), num_envs=1)
+    core.reset([0], ResetSpec(seed=31))
+    result = core.chunk_step([0], [np.zeros((4, ACTION_DIM), dtype=np.float32)])[0]
+    assert result.terminated and not result.truncated
+    assert result.executed_horizon == 1
+    assert result.info["success"] is False
+    assert result.info["fail"] is True
+    assert result.info["termination_reason"] == "failure"
+    assert result.per_step[0].info["success"] is False
+    core.close()
+
+
+def test_maniskill_explicit_seed_is_independent_of_lane(
+    stub_families: dict[str, type],
+) -> None:
+    from rollout_runtime.backends.rlinf_maniskill import ManiskillEnvCore
+
+    core = ManiskillEnvCore()
+    core.build(maniskill_spec(core_form=LOCKSTEP_VECTOR_FORM), num_envs=2)
+    core.reset([0], ResetSpec(seed=31))
+    core.reset([1], ResetSpec(seed=31))
+    assert [call["seed"] for call in core._envs[0].reset_calls] == [[31], [31]]
+    core.close()
+
+
+@pytest.mark.parametrize("core_form", [PER_SLOT_FORM, LOCKSTEP_VECTOR_FORM])
+def test_maniskill_success_history_and_reset_are_episode_local(
+    stub_families: dict[str, type], core_form: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from rollout_runtime.backends.rlinf_maniskill import ManiskillEnvCore
+
+    original = stub_families["maniskill"].step
+
+    def transient_success(self, actions, auto_reset=True):
+        obs, reward, terminated, truncated, _ = original(self, actions, auto_reset)
+        success = self._elapsed == 1
+        return obs, reward, terminated, truncated, {"success": success}
+
+    monkeypatch.setattr(stub_families["maniskill"], "step", transient_success)
+    core = ManiskillEnvCore()
+    core.build(maniskill_spec(core_form=core_form), num_envs=2)
+    core.reset([0, 1], ResetSpec(seed=31))
+    results = core.chunk_step([0, 1], [np.zeros((2, ACTION_DIM), dtype=np.float32)] * 2)
+    for result in results:
+        assert result.info["success"] is False
+        assert result.info["success_once"] is True
+        assert result.info["success_at_end"] is False
+        assert result.info["first_success_step"] == 1
+        assert result.per_step[0].info["success"] is True
+    core.reset([1], ResetSpec(seed=31))
+    assert core._episode_info[1]["success_once"] is False
+    assert core._episode_info[0]["success_once"] is True
+    core.close()
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        np.full((1, 7), np.nan),
+        np.full((1, 7), np.inf),
+        np.ones((1, 7)) * 1.01,
+        np.empty((0, 7)),
+        np.zeros((1, 8)),
+    ],
+)
+@pytest.mark.parametrize("core_form", [PER_SLOT_FORM, LOCKSTEP_VECTOR_FORM])
+def test_maniskill_invalid_actions_never_reach_simulator(stub_families, bad, core_form):
+    from rollout_runtime.backends.rlinf_maniskill import ManiskillEnvCore
+
+    core = ManiskillEnvCore()
+    core.build(maniskill_spec(core_form=core_form), num_envs=1)
+    core.reset([0], ResetSpec(seed=31))
+    with pytest.raises(RuntimeApiError):
+        core.chunk_step([0], [bad])
+    assert not core._envs[0].step_actions
+    core.close()
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        {"auto_reset": True},
+        {"action_dim": 8},
+        {"chunk_size": 0},
+        {"action_scale": 0.1},
+        {"observation_profile": "unknown"},
+        {"extra_init_params": {"max_episode_steps": 999}},
+        {"use_full_state": True},
+        {"use_fixed_reset_state_ids": True},
+    ],
+)
+def test_maniskill_rejects_ambiguous_config(config):
+    from rollout_runtime.backends.rlinf_maniskill import ManiskillEnvConfig
+
+    with pytest.raises(RuntimeApiError):
+        ManiskillEnvConfig.from_mapping(config)
+
+
+def test_maniskill_missing_official_score_is_an_environment_error(
+    stub_families, monkeypatch
+):
+    from rollout_runtime.backends.rlinf_maniskill import ManiskillEnvCore
+
+    original = stub_families["maniskill"].step
+
+    def missing_score(self, actions, auto_reset=True):
+        return (*original(self, actions, auto_reset)[:4], {})
+
+    monkeypatch.setattr(stub_families["maniskill"], "step", missing_score)
+    core = ManiskillEnvCore()
+    core.build(maniskill_spec(), num_envs=1)
+    core.reset([0], ResetSpec(seed=31))
+    with pytest.raises(RuntimeApiError, match="info.success"):
+        core.chunk_step([0], [np.zeros((1, 7))])
     core.close()
 
 

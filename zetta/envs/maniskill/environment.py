@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zetta Contributors
 from typing import Any, Optional, OrderedDict, Union
 
 import gymnasium as gym
@@ -22,7 +23,8 @@ except ModuleNotFoundError:
 from omegaconf import open_dict
 from omegaconf.omegaconf import OmegaConf
 
-from zetta.envs.maniskill.utils import allow_pci_render_backend
+from zetta.envs.maniskill.contracts import LEGACY_PROFILE, PROPRIO_PROFILE
+from zetta.envs.maniskill.utils import allow_pci_render_backend, prepare_physx_gpu
 
 __all__ = ["ManiskillEnv"]
 
@@ -71,6 +73,12 @@ class ManiskillEnv(gym.Env):
             cfg.init_params.num_envs = num_envs
         env_args = OmegaConf.to_container(cfg.init_params, resolve=True)
         allow_pci_render_backend()
+        if str(env_args.get("sim_backend", "")).split(":")[0] in {
+            "gpu",
+            "cuda",
+            "physx_cuda",
+        }:
+            prepare_physx_gpu()
         self.env: BaseEnv = gym.make(**env_args)
         self.prev_step_reward = torch.zeros(self.num_envs, dtype=torch.float32).to(
             self.device
@@ -133,6 +141,8 @@ class ManiskillEnv(gym.Env):
 
     def _show_goal_site_visual(self):
         """Keep ManiSkill goal-site visualization visible for reward-model RGB input."""
+        if getattr(self.cfg, "goal_visibility", "task_default") != "visible":
+            return
         if not hasattr(self.env.unwrapped, "goal_site"):
             return
 
@@ -150,21 +160,40 @@ class ManiskillEnv(gym.Env):
             return infos["extracted_obs"]
 
         if wrap_obs_mode == "simple":
+            profile = getattr(self.cfg, "observation_profile", LEGACY_PROFILE)
+            proprio = None
+            if profile == PROPRIO_PROFILE:
+                robot = self.env.unwrapped.agent.robot
+                qpos, qvel = robot.get_qpos(), robot.get_qvel()
+                if qpos.shape[-1] != 9 or qvel.shape[-1] != 9:
+                    raise ValueError("panda_proprio_v1 requires 9 qpos and 9 qvel")
+                proprio = torch.cat((qpos, qvel), dim=-1).to(torch.float32)
             if self.env.unwrapped.obs_mode == "state":
-                return {"states": raw_obs}
+                return {"states": proprio if proprio is not None else raw_obs}
             elif self.env.unwrapped.obs_mode == "rgb":
-                sensor_data = raw_obs.pop("sensor_data")
-                raw_obs.pop("sensor_param")
+                sensor_data = raw_obs["sensor_data"]
+                state_obs = {
+                    key: value
+                    for key, value in raw_obs.items()
+                    if key not in {"sensor_data", "sensor_param"}
+                }
                 if self.use_full_state:
                     state = self._get_full_state_obs()
+                elif profile == PROPRIO_PROFILE:
+                    state = proprio
                 else:
                     state = common.flatten_state_dict(
-                        raw_obs, use_torch=True, device=self.device
+                        state_obs, use_torch=True, device=self.device
                     )
 
-                main_images = sensor_data["base_camera"]["rgb"]
+                main_camera = getattr(self.cfg, "main_camera", "base_camera")
+                wrist_camera = getattr(self.cfg, "wrist_camera", None)
+                main_images = sensor_data[main_camera]["rgb"]
                 sorted_images = OrderedDict(sorted(sensor_data.items()))
-                sorted_images.pop("base_camera")
+                sorted_images.pop(main_camera)
+                wrist_images = (
+                    sorted_images.pop(wrist_camera)["rgb"] if wrist_camera else None
+                )
                 extra_view_images = (
                     torch.stack([v["rgb"] for v in sorted_images.values()], dim=1)
                     if sorted_images
@@ -172,6 +201,7 @@ class ManiskillEnv(gym.Env):
                 )
                 return {
                     "main_images": main_images,
+                    "wrist_images": wrist_images,
                     "extra_view_images": extra_view_images,
                     "states": state,
                 }
@@ -204,6 +234,42 @@ class ManiskillEnv(gym.Env):
                 state_obs, use_torch=True, device=self.device
             )
         return state_obs
+
+    def reset_state_digest(self, lane_index: int) -> str:
+        """Fingerprint simulator initialization without exposing task poses to policy."""
+        from zetta.envs.maniskill.contracts import contract_digest
+
+        def lane_value(value):
+            if isinstance(value, dict):
+                return {key: lane_value(item) for key, item in value.items()}
+            if isinstance(value, (torch.Tensor, np.ndarray)):
+                item = value[lane_index]
+                if isinstance(item, torch.Tensor):
+                    item = item.detach().cpu().numpy()
+                return np.asarray(item).tolist()
+            raise TypeError(
+                f"unsupported simulator state value: {type(value).__name__}"
+            )
+
+        return contract_digest(lane_value(self.env.unwrapped.get_state_dict()))
+
+    def runtime_metadata(self) -> dict:
+        import os
+        from importlib.metadata import version
+
+        return {
+            "mani_skill_version": version("mani-skill"),
+            "sapien_version": version("sapien"),
+            "control_frequency": self.env.unwrapped.control_freq,
+            "simulation_frequency": self.env.unwrapped.sim_freq,
+            "worker_pid": os.getpid(),
+            "simulation_device": str(self.env.unwrapped.device),
+            "simulation_pci_id": self.env.unwrapped.backend.sim_device.pci_string,
+            "render_pci_id": self.env.unwrapped.backend.render_device.pci_string
+            if self.env.unwrapped.backend.render_device is not None
+            else None,
+            "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES", ""),
+        }
 
     def _calc_step_reward(self, reward, info):
         if getattr(self.cfg, "reward_mode", "default") == "raw":
@@ -275,7 +341,8 @@ class ManiskillEnv(gym.Env):
         options: Optional[dict] = None,
     ):
         if options is None:
-            seed = self.seed
+            if seed is None:
+                seed = self.seed
             options = (
                 {"episode_id": self.reset_state_ids}
                 if self.use_fixed_reset_state_ids
@@ -283,6 +350,13 @@ class ManiskillEnv(gym.Env):
             )
         raw_obs, infos = self.env.reset(seed=seed, options=options)
         self._show_goal_site_visual()
+        if (
+            getattr(self.cfg, "goal_visibility", "task_default") == "visible"
+            and self.env.unwrapped.obs_mode == "rgb"
+        ):
+            # Reconfiguration recreates the hidden goal before reset captures RGB.
+            # Refresh after applying visibility so the first policy frame is valid.
+            raw_obs = self.env.unwrapped.get_obs()
         extracted_obs = self._wrap_obs(raw_obs, infos=infos)
         if "env_idx" in options:
             env_idx = options["env_idx"]
@@ -300,7 +374,8 @@ class ManiskillEnv(gym.Env):
         extracted_obs = self._wrap_obs(raw_obs, infos=infos)
         step_reward = self._calc_step_reward(_reward, infos)
 
-        infos = self._record_metrics(step_reward, infos)
+        if self.record_metrics:
+            infos = self._record_metrics(step_reward, infos)
         if isinstance(terminations, bool):
             terminations = torch.tensor([terminations], device=self.device)
         if isinstance(truncations, bool):

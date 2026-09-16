@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zetta Contributors
 """rlinf implementation of ``PolicyInferenceCore`` (supports the openpi / pi0.5 pipeline first).
 
 Extraction source and scope follow two lists exactly:
@@ -42,7 +43,11 @@ inherently so), called via ``asyncio.to_thread`` by
 from __future__ import annotations
 
 import dataclasses
+import hashlib
+import random
+import threading
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -64,6 +69,8 @@ __all__ = [
 
 OPENPI_MODEL_TYPES = frozenset({"openpi", "openpi_pytorch"})
 """``model_type`` values currently supported: the openpi (pi0 / pi0.5) pipeline."""
+
+_INFERENCE_RNG_LOCK = threading.RLock()
 
 _PRECISION_TO_DTYPE = {
     None: "float32",
@@ -194,6 +201,11 @@ class RlinfPolicyConfig:
     dtype: str | None = None
     unnorm_key: str = ""
     stack_wrist_views: bool = False
+    observation_contract: str | None = None
+    action_contract: str | None = None
+    openpi_data: dict[str, Any] = dataclasses.field(default_factory=dict)
+    checkpoint_sha256: str | None = None
+    norm_stats_sha256: str | None = None
 
     @classmethod
     def from_mapping(cls, config: Mapping[str, Any] | None) -> RlinfPolicyConfig:
@@ -256,6 +268,8 @@ class RlinfPolicyConfig:
             payload["lora_path"] = self.lora_path
         if self.unnorm_key:
             payload["unnorm_key"] = self.unnorm_key
+        if self.openpi_data:
+            payload["openpi_data"] = dict(self.openpi_data)
         family = dict(self.family_params)
         family.setdefault("action_chunk", int(self.num_action_chunks))
         family.setdefault("num_steps", int(self.num_steps))
@@ -303,6 +317,7 @@ class RlinfPolicyCore:
         self.error_count = 0
         self.padded_request_count = 0
         self._model_version = self.config.model_version
+        self._verified_artifacts: dict[str, str] = {}
 
     # ------------------------------------------------------------ Protocol attributes
 
@@ -358,6 +373,7 @@ class RlinfPolicyCore:
         if self.loaded:
             return
         config = self.config
+        self._verified_artifacts = self._verify_frozen_artifacts()
         if config.enable_cuda_graph and not config.cuda_graph_batch_size:
             raise ValueError(
                 "enable_cuda_graph requires cuda_graph_batch_size (and the matching "
@@ -399,6 +415,10 @@ class RlinfPolicyCore:
             model_version: Target version; ``"file:<path>"`` triggers an
                 actual reload.
         """
+        if self._verified_artifacts:
+            raise ValueError(
+                "frozen artifact policies require a new worker to update weights"
+            )
         if model_version.startswith("file:") and self.model is not None:
             import torch
 
@@ -463,7 +483,18 @@ class RlinfPolicyCore:
         self.batch_calls += 1
         self.request_count += len(requests)
         try:
-            actions = self._predict_batch(requests)
+            with _INFERENCE_RNG_LOCK:
+                if any("seed" in request.inference_parameters for request in requests):
+                    actions = np.concatenate(
+                        [
+                            self._predict_seeded(request)
+                            if "seed" in request.inference_parameters
+                            else self._predict_batch([request])
+                            for request in requests
+                        ]
+                    )
+                else:
+                    actions = self._predict_batch(requests)
         except BaseException as exc:  # noqa: BLE001 - D5: per-request normalization, never leak
             self.error_count += len(requests)
             return [self._error_response(request, exc) for request in requests]
@@ -507,14 +538,90 @@ class RlinfPolicyCore:
                     auxiliary_outputs={
                         "chunk": int(block.shape[0]),
                         "compat_key": request.compat_key,
-                        "batch_size": len(requests),
+                        "batch_size": 1
+                        if any("seed" in r.inference_parameters for r in requests)
+                        else len(requests),
                         "model_type": self.config.model_type,
+                        "policy_rng_acknowledged": "seed"
+                        in request.inference_parameters,
+                        "observation_contract": self.config.observation_contract,
+                        "action_contract": self.config.action_contract,
+                        **self._verified_artifacts,
                     },
                 )
             )
         return responses
 
     # ------------------------------------------------------------------ Internal
+
+    def _verify_frozen_artifacts(self) -> dict[str, str]:
+        """Bind the first frozen profile to the exact local files the loader uses."""
+        config = self.config
+        if config.checkpoint_sha256 is None and config.norm_stats_sha256 is None:
+            return {}
+        root = Path(config.model_path).expanduser().resolve()
+        weights = root / "model.safetensors"
+        if (
+            config.ckpt_path
+            or config.is_lora
+            or config.lora_path
+            or sorted(root.glob("*.safetensors")) != [weights]
+            or (root / "model_state_dict/full_weights.pt").exists()
+            or (root / "actor/model_state_dict/full_weights.pt").exists()
+        ):
+            raise ValueError(
+                "frozen profile requires exactly one model.safetensors and no weight overrides"
+            )
+        norm = Path(config.openpi_data.get("norm_stats_path", "")).expanduser()
+        if norm.is_dir():
+            norm = norm / "norm_stats.json"
+        if norm.name != "norm_stats.json":
+            raise ValueError("frozen profile requires explicit norm_stats.json")
+        verified = {}
+        for name, path in (("checkpoint_sha256", weights), ("norm_stats_sha256", norm)):
+            expected = getattr(config, name)
+            if not isinstance(expected, str) or len(expected) != 64:
+                raise ValueError(f"frozen profile requires {name}")
+            digest = hashlib.sha256()
+            with path.open("rb") as stream:
+                for block in iter(lambda: stream.read(8 * 1024 * 1024), b""):
+                    digest.update(block)
+            if digest.hexdigest() != expected:
+                raise ValueError(f"policy artifact mismatch: {name}")
+            verified[name] = digest.hexdigest()
+        return verified
+
+    def _predict_seeded(self, request: InferenceRequest) -> np.ndarray:
+        """Isolate each seeded request from batching and other episodes' RNG."""
+        import torch
+
+        seed = request.inference_parameters.get("seed")
+        if type(seed) is not int or not 0 <= seed < 2**32:
+            raise ValueError(
+                "seeded OpenPI batches require a uint32 seed for every request"
+            )
+        if self.config.enable_cuda_graph:
+            raise ValueError("seeded OpenPI inference requires CUDA graphs disabled")
+        devices = []
+        if str(self.config.device).startswith("cuda") and torch.cuda.is_available():
+            device = torch.device(self.config.device)
+            devices = [
+                device.index
+                if device.index is not None
+                else torch.cuda.current_device()
+            ]
+        python_state, numpy_state = random.getstate(), np.random.get_state()
+        try:
+            with torch.random.fork_rng(devices=devices):
+                random.seed(seed)
+                np.random.seed(seed)
+                torch.random.default_generator.manual_seed(seed)
+                for index in devices:
+                    torch.cuda.default_generators[index].manual_seed(seed)
+                return self._predict_batch([request])
+        finally:
+            random.setstate(python_state)
+            np.random.set_state(numpy_state)
 
     def _predict_kwargs(self, requests: Sequence[InferenceRequest]) -> dict[str, Any]:
         """Assemble keyword arguments for ``predict_action_batch`` (sampling
@@ -554,6 +661,11 @@ class RlinfPolicyCore:
         from zetta.compat.tensors import to_tensor
 
         observations = [request.observation for request in requests]
+        for observation in observations:
+            for name in ("observation_contract", "action_contract"):
+                expected = getattr(self.config, name)
+                if expected is not None and observation.extras.get(name) != expected:
+                    raise ValueError(f"policy {name} does not match the environment")
         reference = obs_schema_digest(observations[0])
         for index, observation in enumerate(observations[1:], start=1):
             if obs_schema_digest(observation) != reference:

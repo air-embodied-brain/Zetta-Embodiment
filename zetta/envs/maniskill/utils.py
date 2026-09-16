@@ -1,4 +1,27 @@
+# Copyright (c) 2026 Zetta Contributors
 import torch
+
+
+def prepare_physx_gpu() -> None:
+    """Load the explicitly prepared GPU library without SAPIEN's home-directory download."""
+    import ctypes
+    import os
+    from pathlib import Path
+
+    library = os.environ.get("SAPIEN_PHYSX_GPU_LIBRARY")
+    if not library:
+        return
+    import sapien.physx
+
+    if sapien.physx.is_gpu_enabled():
+        return
+    path = Path(library)
+    if not path.is_file():
+        raise FileNotFoundError(f"prepared PhysX GPU library is missing: {path}")
+    ctypes.CDLL("libcuda.so", ctypes.RTLD_GLOBAL)
+    ctypes.CDLL(str(path), ctypes.RTLD_LOCAL)
+    # Same final activation as the pinned SAPIEN 3.0.2 enable_gpu implementation.
+    sapien.physx._enable_gpu()
 
 
 def allow_pci_render_backend() -> None:

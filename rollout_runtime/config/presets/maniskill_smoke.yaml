@@ -1,0 +1,63 @@
+# Native PickCube infrastructure smoke; fake policy is not a model benchmark.
+# One GPU for simulation/rendering, one separate CPU process for fake inference.
+env_family: maniskill
+env_config:
+  env_id: PickCube-v1
+  robot_uids: panda
+  obs_mode: rgb
+  control_mode: pd_ee_delta_pose
+  action_dim: 7
+  sim_backend: gpu
+  camera_height: 128
+  camera_width: 128
+  max_episode_steps: 50
+  wrap_obs_mode: simple
+  observation_profile: panda_proprio_v1
+  main_camera: base_camera
+  wrist_camera: null
+  goal_visibility: visible
+  reward_mode: raw
+  use_rel_reward: false
+  use_full_state: false
+  auto_reset: false
+  ignore_terminations: false
+  return_all_frames: true
+  core_form: per_slot
+  extra_init_params:
+    enhanced_determinism: true
+    # Rebuild PhysX state to remove contact history between paired episodes.
+    reconfiguration_freq: 1
+cluster:
+  num_nodes: 1
+  component_placement:
+    env:
+      placement: "0"
+gateway:
+  default_lease_seconds: 1800
+  heartbeat_timeout_seconds: 180
+  heartbeat_interval_seconds: 10
+transport:
+  kind: ray_channel
+  command_timeout_seconds: 600
+env_worker:
+  group_name: maniskill-env
+  num_ranks: 1
+  placement_strategy: packed
+  max_sessions_per_rank: 1
+  default_pool_size: 1
+  coalesce_slot_groups: false
+rollout_worker:
+  group_name: maniskill-fake-policy
+  num_ranks: 1
+  placement_strategy: node
+  policy_id: fake
+  policy_family: fake
+  policy_backend: fake
+  device: cpu
+  dtype: float32
+  scheduler:
+    max_batch_size: 1
+    max_wait_ms: 5
+    max_inflight_per_session: 1
+payload:
+  image_codec: png

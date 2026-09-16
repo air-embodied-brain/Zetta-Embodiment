@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zetta Contributors
 """Lane state and the lockstep coalescing executor shared by the three rlinf
 families (M6).
 
@@ -377,6 +378,7 @@ def run_lockstep_chunk(
     observe: Callable[[int, dict[str, Any]], Observation],
     include_step_observations: bool = False,
     chunk_info: Callable[[int], dict[str, Any]] | None = None,
+    step_info: Callable[[int, Any], dict[str, Any]] | None = None,
 ) -> tuple[list[ChunkOutcome], LockstepStats]:
     """Merge same-pool same-tick action blocks into **one** vector advance step
     (the real coalescing implementation).
@@ -408,6 +410,8 @@ def run_lockstep_chunk(
         include_step_observations: Whether to include per-step observations in
             the ``PerStepRecord``.
         chunk_info: ``slot_index -> family-private chunk-level info``.
+        step_info: Optional family scoring callback for each unfinished lane;
+            receives ``(slot_index, raw_info)`` after updating lifecycle flags.
 
     Returns:
         ``(ChunkOutcome list in the same order as slots, this group's stats)``.
@@ -558,6 +562,8 @@ def run_lockstep_chunk(
                 # wrongly trigger an early stop for that whole group.
                 lane.terminated = lane.terminated or lane_terminated
                 lane.truncated = lane.truncated or lane_truncated
+                if step_info is not None and not lane.frozen:
+                    step_info(slot_index, _info)
                 if lane.terminated or lane.truncated:
                     lane.frozen = True
                 continue
@@ -577,7 +583,12 @@ def run_lockstep_chunk(
             rewards[slot_index].append(to_scalar(reward, lane.lane_index))
             terminations[slot_index].append(lane.terminated)
             truncations[slot_index].append(lane.truncated)
-            per_step_info[slot_index].append({"step_index": lane.step_index})
+            per_step_info[slot_index].append(
+                {
+                    "step_index": lane.step_index,
+                    **(step_info(slot_index, _info) if step_info is not None else {}),
+                }
+            )
             # Per-step observations are always collected: ``PerStepRecord``'s
             # ``step_index`` is derived from them, and skipping this would
             # stamp the last frame's step number onto every record. Whether
