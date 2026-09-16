@@ -257,7 +257,7 @@ performed later as recorded below.
   `0/1`, no infrastructure-invalid arms); the run then continued to candidate
   refinement rather than bypassing the gate. Gate records and immutable
   episode artifacts are under
-  `/mnt/ssd_data/wangzexu/geniesim-g2-real-20260911/campaign-real-01/run3`.
+  `<validation-root>/geniesim-g2-real-20260911/campaign-real-01/run3`.
 - The Campaign's authoritative task outcome remained unsuccessful (`E2E=0`)
   for the completed paired episode. This validates end-to-end VLA and Campaign
   execution with a real checkpoint, but does not demonstrate task improvement
@@ -309,7 +309,7 @@ performed later as recorded below.
   Runtime environment with the current test and serving files synchronized.
 
 Operational evidence is under
-`air-4090:/mnt/ssd_data/wangzexu/geniesim-g2-real-20260911/campaign-gpu-20260915`
+`<validation-root>/geniesim-g2-real-20260911/campaign-gpu-20260915`
 and the sibling `evidence/` and `jobs/` directories. Local visual copies are in
 `geniesim-visual-results/`; detailed status is in
 `artifacts/geniesim-validation-20260915/STATUS.md`.

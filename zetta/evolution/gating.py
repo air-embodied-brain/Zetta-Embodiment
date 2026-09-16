@@ -93,6 +93,31 @@ def _same_physical_reset(
 
     candidate_state = candidate_identity.get("state_sha256")
     parent_state = parent_identity.get("state_sha256")
+    maniskill_contract = "maniskill_initial_state_sha256_v1"
+    if any(
+        identity.get("comparison_contract") == maniskill_contract
+        for identity in (candidate_identity, parent_identity)
+    ):
+        fields = (
+            "initial_state_sha256",
+            "scenario_sha256",
+            "instruction_sha256",
+            "task_contract_sha256",
+        )
+        for identity in (candidate_identity, parent_identity):
+            if identity.get("comparison_contract") != maniskill_contract:
+                raise ValueError("paired ManiSkill reset contracts differ")
+            for field in fields:
+                value = identity.get(field)
+                if (
+                    not isinstance(value, str)
+                    or len(value) != 64
+                    or any(c not in "0123456789abcdef" for c in value)
+                ):
+                    raise ValueError(f"invalid ManiSkill reset digest: {field}")
+        return all(
+            candidate_identity[field] == parent_identity[field] for field in fields
+        ), False
     contract = "geniesim_g2_joint_reset_v1"
     if any(
         identity.get("comparison_contract") == contract
@@ -250,9 +275,7 @@ def evaluate_paired_gate(
                 and no_safety_regression
             )
         else:
-            required_successes = math.ceil(
-                len(expected_seeds) * same_seed_pass_rate
-            )
+            required_successes = math.ceil(len(expected_seeds) * same_seed_pass_rate)
             rescued_seeds = tuple(
                 seed
                 for seed in expected_seeds
@@ -426,7 +449,9 @@ def evaluate_fixed_heldout_20(
     """
 
     if len(preregistered_seeds) != 20:
-        raise ValueError("fixed heldout_20 gate requires exactly 20 preregistered seeds")
+        raise ValueError(
+            "fixed heldout_20 gate requires exactly 20 preregistered seeds"
+        )
     return evaluate_paired_gate(
         kind="heldout_20",
         candidate_sha256=candidate_sha256,

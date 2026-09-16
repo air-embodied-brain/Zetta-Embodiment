@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zetta Contributors
 """Remote acceptance for the maniskill family: real maniskill + Gym Adapter +
 batch eval.
 
@@ -176,6 +177,79 @@ def _spec(*, lanes: int, core_form: str) -> EnvSpecMsg:
         env_config=_env_config(core_form=core_form),
         pool_size=lanes,
     )
+
+
+def test_vector_partial_reset_and_physical_step_accounting() -> None:
+    """Scene reuse is synchronous infrastructure, with honest masked-lane time."""
+    from rollout_runtime.api.errors import RuntimeApiError
+    from rollout_runtime.api.messages import ResetSpec
+    from rollout_runtime.backends.rlinf_maniskill import ManiskillEnvCore
+
+    core = ManiskillEnvCore()
+    try:
+        core.build(
+            EnvSpecMsg(
+                env_family=MANISKILL_FAMILY,
+                env_config=_env_config(
+                    core_form=LOCKSTEP_VECTOR_FORM,
+                    max_episode_steps=4,
+                    return_all_frames=True,
+                    robot_uids="panda",
+                    extra_init_params={"enhanced_determinism": True},
+                ),
+            ),
+            num_envs=2,
+        )
+        initial = core.reset([0, 1], ResetSpec(seed=31))
+        np.testing.assert_allclose(
+            initial[0].state[:9], initial[1].state[:9], atol=1e-5, rtol=1e-5
+        )
+        env = core._envs[0].env.unwrapped
+        with pytest.raises(RuntimeApiError, match="single chunk length"):
+            core.chunk_step([0, 1], [np.zeros((1, 7)), np.zeros((2, 7))])
+        assert env.elapsed_steps.tolist() == [0, 0]
+        outcomes = core.chunk_step([1, 0], [np.zeros((2, 7)), np.zeros((2, 7))])
+        assert [v.executed_horizon for v in outcomes] == [2, 2]
+        assert [v.observation.extras["lane_index"] for v in outcomes] == [1, 0]
+        assert env.elapsed_steps.tolist() == [2, 2]
+        for outcome in outcomes:
+            assert [v.step_index for v in outcome.per_step] == [1, 2]
+            assert all(type(v.info["success"]) is bool for v in outcome.per_step)
+        before = env.get_state_dict()
+        unchanged = {
+            kind: {name: value[0].clone() for name, value in values.items()}
+            for kind, values in before.items()
+        }
+        core.reset([1], ResetSpec(seed=31))
+        assert env.elapsed_steps.tolist() == [2, 0]
+        for kind, values in env.get_state_dict().items():
+            for name, value in values.items():
+                # GPU kinematics refresh can round a fixed root pose (~2.4e-7);
+                # no simulation step is taken, and joint states stay exact.
+                np.testing.assert_allclose(
+                    value[0].cpu().numpy(),
+                    unchanged[kind][name].cpu().numpy(),
+                    atol=1e-6,
+                    rtol=0,
+                    err_msg=f"partial reset changed {kind}/{name}",
+                )
+                if kind == "articulations":
+                    np.testing.assert_array_equal(
+                        value[0, 13:].cpu().numpy(),
+                        unchanged[kind][name][13:].cpu().numpy(),
+                    )
+        result = core.chunk_step([1], [np.zeros((6, 7))])[0]
+        assert result.executed_horizon == 4 and result.truncated
+        assert result.info["termination_reason"] == "time_limit"
+        assert env.elapsed_steps.tolist() == [6, 4]
+        assert core._lanes[0].masked_steps == 4
+        assert core._lanes[0].frozen
+        core.reset([0], ResetSpec(seed=32))
+        assert core.chunk_step([0], [np.zeros((1, 7))])[0].executed_horizon == 1
+        assert env.elapsed_steps.tolist() == [1, 5]
+        assert core._lanes[1].frozen
+    finally:
+        core.close()
 
 
 @pytest.mark.asyncio(loop_scope="module")

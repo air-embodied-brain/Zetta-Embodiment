@@ -16,7 +16,7 @@ Zetta is an efficient closed-loop embodied harness for self-evolving physical in
 - [√] **August 27, 2026:** Add NVIDIA Cosmos model support.
 - [√] **September 3, 2026:** Add RoboTwin environment support.
 - [√] **September 10, 2026:** Add Genie Sim environment support.
-- [ ] **September 17, 2026:** Add ManiSkill environment support.
+- [√] **September 17, 2026:** Add ManiSkill environment support (native Panda/PickCube; model validation pending).
 - [ ] **September 20, 2026:** Add BEHAVIOR environment support.
 - [ ] **Ongoing:** Expand model and environment coverage at an approximate cadence of one integration per week.
 
@@ -95,6 +95,14 @@ The `geniesim_vla` backend adds the G2 CoRobot WebSocket policy protocol, and
 `prepare_geniesim_campaign.py` freezes VLA rollout and candidate gate commands.
 See [Genie Sim VLA and Campaign](docs/geniesim-vla.md) for the model-service
 contract, deployment, evidence, and current single-task limits.
+
+### ManiSkill environment
+
+The native Panda / `PickCube-v1` integration adds explicit observation/action
+contracts, official scoring, reproducible resets and a single-GPU Ray smoke preset.
+See [ManiSkill deployment and contracts](docs/maniskill.md) for installation,
+validation and frozen rollout/campaign configuration. Real VLA and campaign
+validation requires a matching native PickCube checkpoint and normalization stats.
 
 ### VLA runtime environment (LIBERO-Pro or RoboCasa)
 

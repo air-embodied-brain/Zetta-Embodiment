@@ -1,0 +1,10 @@
+# Native Panda profile, Linux x86_64 / CUDA 12.4.
+mani-skill==3.0.1
+sapien==3.0.2
+torch==2.6.0
+gymnasium==1.1.1
+numpy==1.26.4
+omegaconf==2.3.0
+imageio-ffmpeg==0.6.0
+# SAPIEN 3.0.2 imports pkg_resources, removed in setuptools 81+.
+setuptools==80.9.0

@@ -1,8 +1,9 @@
+# Copyright (c) 2026 Zetta Contributors
 """ManiSkill family adapter.
 
-**Does not reimplement rlinf's env**: ``rlinf.envs.maniskill.maniskill_env.ManiskillEnv``
-is reused as-is, along with the maniskill branch of
-``envs.action_utils.prepare_actions`` and the 5-key schema of ``_wrap_obs``. This
+Uses the locally adapted ``zetta.envs.maniskill.environment.ManiskillEnv``,
+the maniskill branch of ``zetta.compat.actions.prepare_actions``, and the
+five-key schema of ``_wrap_obs``. This
 module does exactly three things: translate Runtime's session/slot semantics into
 family calls, normalize family output through
 ``core.env_execution.normalize_chunk_outcome`` (the single output point), and build
@@ -26,8 +27,7 @@ above never needs an if):
 while generic ManiSkill tasks (e.g. ``PickCube-v1``) name their camera
 ``base_camera``, which is exactly what the ``"simple"`` branch reads.
 
-Dependency surface: rlinf + mani_skill + torch + numpy, all **lazily imported
-inside functions**.
+Simulator dependencies are lazily imported; the upstream rlinf package is not required.
 """
 
 from __future__ import annotations
@@ -68,6 +68,14 @@ from rollout_runtime.core.env_registry import (
     capability_from_behavior,
     register_env_family,
     requested_core_form,
+)
+from zetta.envs.maniskill.contracts import (
+    ACTION_CONTRACT,
+    LEGACY_PROFILE,
+    PROPRIO_PROFILE,
+    contract_digest,
+    observation_contract,
+    validate_native_actions,
 )
 
 __all__ = [
@@ -145,7 +153,7 @@ class ManiskillEnvConfig:
     wrap_obs_mode: str = "simple"
     reward_mode: str = "raw"
     use_full_state: bool = False
-    max_episode_steps: int = 100
+    max_episode_steps: int = 50
     auto_reset: bool = False
     ignore_terminations: bool = False
     use_rel_reward: bool = False
@@ -161,6 +169,76 @@ class ManiskillEnvConfig:
     save_video: bool = False
     core_form: str = PER_SLOT_FORM
     extra_init_params: dict[str, Any] = dataclasses.field(default_factory=dict)
+    observation_profile: str = PROPRIO_PROFILE
+    main_camera: str = "base_camera"
+    wrist_camera: str | None = None
+    goal_visibility: str = "task_default"
+
+    def __post_init__(self) -> None:
+        if self.auto_reset:
+            raise ValueError("Runtime owns resets; maniskill auto_reset must be false")
+        if self.group_size != 1:
+            raise ValueError("maniskill group_size must be 1")
+        for name in (
+            "camera_height",
+            "camera_width",
+            "max_episode_steps",
+            "chunk_size",
+        ):
+            value = getattr(self, name)
+            if type(value) is not int or value < 1:
+                raise ValueError(f"{name} must be a positive integer")
+        if self.action_dim != 7 or self.control_mode != "pd_ee_delta_pose":
+            raise ValueError("native ManiSkill profile requires 7D pd_ee_delta_pose")
+        if self.obs_mode not in {"rgb", "state"} or self.wrap_obs_mode != "simple":
+            raise ValueError("native ManiSkill supports simple rgb/state observations")
+        if self.reward_mode != "raw":
+            raise ValueError("native ManiSkill uses the environment's raw reward")
+        if self.use_fixed_reset_state_ids:
+            raise ValueError("native ManiSkill tasks do not support reset_state_id")
+        if self.use_full_state and self.observation_profile != LEGACY_PROFILE:
+            raise ValueError(
+                "full state requires the explicit legacy_flatten_v1 profile"
+            )
+        if (
+            self.action_policy not in {"panda", "panda_wristcam"}
+            or self.action_scale != 1.0
+        ):
+            raise ValueError(
+                "native Panda actions require identity conversion and scale=1"
+            )
+        if self.robot_uids not in {None, "panda", "panda_wristcam"}:
+            raise ValueError("native ManiSkill profile supports Panda robots only")
+        reserved = {
+            "id",
+            "num_envs",
+            "obs_mode",
+            "control_mode",
+            "sim_backend",
+            "robot_uids",
+            "sensor_configs",
+            "max_episode_steps",
+        }
+        if reserved.intersection(self.extra_init_params):
+            raise ValueError(
+                "extra_init_params cannot override declared environment fields"
+            )
+        observation_contract(
+            profile=self.observation_profile,
+            main_camera=self.main_camera,
+            wrist_camera=self.wrist_camera,
+            goal_visibility=self.goal_visibility,
+        )
+
+    def observation_digest(self) -> str:
+        return contract_digest(
+            observation_contract(
+                profile=self.observation_profile,
+                main_camera=self.main_camera,
+                wrist_camera=self.wrist_camera,
+                goal_visibility=self.goal_visibility,
+            )
+        )
 
     @classmethod
     def from_mapping(cls, config: Mapping[str, Any] | None) -> ManiskillEnvConfig:
@@ -194,16 +272,15 @@ class ManiskillEnvConfig:
                     known_keys=sorted(known),
                 )
             )
-        instance = cls(**dict(config))
-        if instance.group_size != 1:
+        try:
+            instance = cls(**dict(config))
+        except (TypeError, ValueError) as exc:
             raise RuntimeApiError(
                 make_error(
                     ErrorCode.INVALID_ARGUMENT,
-                    "maniskill group_size must be 1: Runtime binds one session per lane, "
-                    "so rlinf's group replication has no meaning here",
-                    group_size=instance.group_size,
+                    str(exc),
                 )
-            )
+            ) from exc
         return instance
 
     def to_rlinf_cfg(self, *, num_envs: int) -> Any:
@@ -256,6 +333,10 @@ class ManiskillEnvConfig:
                 "ignore_terminations": bool(self.ignore_terminations),
                 "use_rel_reward": bool(self.use_rel_reward),
                 "use_full_state": bool(self.use_full_state),
+                "observation_profile": self.observation_profile,
+                "main_camera": self.main_camera,
+                "wrist_camera": self.wrist_camera,
+                "goal_visibility": self.goal_visibility,
                 "use_fixed_reset_state_ids": bool(self.use_fixed_reset_state_ids),
                 "group_size": int(self.group_size),
                 "wrap_obs_mode": self.wrap_obs_mode,
@@ -303,6 +384,7 @@ class ManiskillEnvCore:
         self._core_form = PER_SLOT_FORM
         self._lanes: list[LaneState] = []
         self._envs: list[Any] = []
+        self._episode_info: dict[int, dict[str, Any]] = {}
 
     @property
     def behavior(self) -> EnvFamilyBehavior:
@@ -475,6 +557,13 @@ class ManiskillEnvCore:
         """
         import torch
 
+        if reset_spec.reset_state_id is not None:
+            raise RuntimeApiError(
+                make_error(
+                    ErrorCode.INVALID_ARGUMENT,
+                    "native ManiSkill does not support reset_state_id",
+                )
+            )
         by_slot: dict[int, Observation] = {}
         groups: dict[int, list[int]] = {}
         for slot_index in slots:
@@ -496,31 +585,40 @@ class ManiskillEnvCore:
                     device=env.device,
                 )
             payload, _info = env.reset(
-                # The seed is computed per **lane**, not per "position within
-                # this request": the Gateway resets sessions one at a time, so
-                # the same ResetSpec must give the same lane the same seed
-                # regardless of how it is batched (found by an independent
-                # audit: previously reset([0,1,2]) gave [7,8,9] while
-                # reset([1]) gave [7]).
-                seed=(
-                    [seed + int(lane) for lane in lane_indices]
-                    if seed is not None
-                    else None
-                ),
+                # A logical episode's explicit seed is independent of placement.
+                # The caller generates distinct seeds for distinct episodes.
+                seed=([seed] * len(lane_indices) if seed is not None else None),
                 options=options,
             )
             for slot_index in slot_list:
                 lane = self._lanes[slot_index]
                 lane.begin_episode()
+                self._episode_info[slot_index] = {
+                    "success": False,
+                    "fail": False,
+                    "success_once": False,
+                    "success_at_end": False,
+                    "first_success_step": None,
+                    "termination_reason": "running",
+                    "seed": seed,
+                }
                 lane.instruction = self._instruction(env, lane, reset_spec)
                 lane.extras = {
                     "env_id": self.config.env_id,
+                    "observation_contract": self.config.observation_digest(),
+                    "action_contract": ACTION_CONTRACT,
                     "reset_state_id": (
                         int(reset_spec.reset_state_id)
                         if reset_spec.reset_state_id is not None
                         else -1
                     ),
                 }
+                if callable(getattr(env, "reset_state_digest", None)):
+                    lane.extras["initial_state_sha256"] = env.reset_state_digest(
+                        lane.lane_index
+                    )
+                if callable(getattr(env, "runtime_metadata", None)):
+                    lane.extras.update(env.runtime_metadata())
                 by_slot[slot_index] = self._observation(slot_index, payload)
         return [by_slot[slot_index] for slot_index in slots]
 
@@ -707,6 +805,7 @@ class ManiskillEnvCore:
             A float32 tensor on the device.
         """
         import torch
+
         from zetta.compat.actions import prepare_actions
 
         prepared = prepare_actions(
@@ -738,18 +837,58 @@ class ManiskillEnvCore:
         Raises:
             RuntimeApiError: The shape is wrong (``INVALID_ARGUMENT``).
         """
-        block = np.asarray(actions, dtype=np.float32)
-        if block.ndim != 2 or block.shape[1] != self.config.action_dim:
+        try:
+            block = validate_native_actions(actions)
+        except (TypeError, ValueError) as exc:
             raise RuntimeApiError(
                 make_error(
                     ErrorCode.INVALID_ARGUMENT,
-                    f"maniskill expects [chunk, {self.config.action_dim}] actions, got "
-                    f"shape {tuple(int(dim) for dim in block.shape)}",
+                    str(exc),
                     action_dim=self.config.action_dim,
                     slot_index=slot_index,
                 )
-            )
+            ) from exc
         return block
+
+    def _record_step_info(self, slot_index: int, info: Any) -> dict[str, Any]:
+        lane = self._lanes[slot_index]
+        if not isinstance(info, Mapping) or "success" not in info:
+            raise RuntimeApiError(
+                make_error(
+                    ErrorCode.ENV_FAILURE,
+                    "ManiSkill official scoring requires info.success",
+                )
+            )
+        result: dict[str, Any] = {}
+        expected = int(self._envs[lane.env_index].num_envs)
+        for name in ("success", "fail"):
+            value = to_numpy(info.get(name, np.zeros(expected, dtype=bool))).reshape(-1)
+            if len(value) != expected or value.dtype.kind != "b":
+                raise RuntimeApiError(
+                    make_error(
+                        ErrorCode.ENV_FAILURE,
+                        f"info.{name} must contain one boolean per lane",
+                    )
+                )
+            result[name] = bool(value[lane.lane_index])
+        episode = self._episode_info[slot_index]
+        episode.update(result)
+        episode["success_at_end"] = result["success"]
+        episode["success_once"] = episode["success_once"] or result["success"]
+        if result["success"] and episode["first_success_step"] is None:
+            episode["first_success_step"] = lane.step_index
+        episode["termination_reason"] = (
+            "success"
+            if lane.terminated and result["success"]
+            else "failure"
+            if lane.terminated and result["fail"]
+            else "terminated"
+            if lane.terminated
+            else "time_limit"
+            if lane.truncated
+            else "running"
+        )
+        return dict(episode)
 
     def _chunk_step_one(self, slot_index: int, actions: np.ndarray) -> ChunkOutcome:
         """``per_slot`` form: drive one lane step by step, stopping at the first
@@ -805,7 +944,12 @@ class ManiskillEnvCore:
             rewards.append(to_scalar(reward))
             terminations.append(lane.terminated)
             truncations.append(lane.truncated)
-            per_step_info.append({"step_index": lane.step_index})
+            per_step_info.append(
+                {
+                    "step_index": lane.step_index,
+                    **self._record_step_info(slot_index, _info),
+                }
+            )
             frames.append(self._observation(slot_index, payload))
         if lane.terminated or lane.truncated:
             lane.frozen = True
@@ -828,6 +972,7 @@ class ManiskillEnvCore:
                 "chunk_calls": lane.chunk_calls,
                 "env_id": self.config.env_id,
                 "core_form": self._core_form,
+                **self._episode_info[slot_index],
             },
         )
 
@@ -862,7 +1007,10 @@ class ManiskillEnvCore:
             core_form=self._core_form,
             lanes=self._lanes,
             slots=list(slots),
-            blocks=list(chunk_actions),
+            blocks=[
+                self._validate_block(slot, block)
+                for slot, block in zip(slots, chunk_actions, strict=True)
+            ],
             action_dim=int(self.config.action_dim),
             hold_action=np.zeros(int(self.config.action_dim), dtype=np.float32),
             prepare=self._prepared_actions,
@@ -870,10 +1018,12 @@ class ManiskillEnvCore:
             elapsed_steps=_elapsed,
             observe=self._observation,
             include_step_observations=self.config.return_all_frames,
+            step_info=self._record_step_info,
             chunk_info=lambda slot_index: {
                 "chunk_calls": self._lanes[slot_index].chunk_calls,
                 "env_id": self.config.env_id,
                 "masked_steps": self._lanes[slot_index].masked_steps,
+                **self._episode_info[slot_index],
             },
         )
         self.total_masked_steps = sum(lane.masked_steps for lane in self._lanes)

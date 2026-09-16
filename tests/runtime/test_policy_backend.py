@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zetta Contributors
 """Local coverage for ``backends/rlinf_policy.py`` (mock-first).
 
 ``.venv-runtime`` has torch but no rlinf / openpi weights, so ``rlinf.models.get_model``
@@ -23,6 +24,8 @@ configured GPU host.
 
 from __future__ import annotations
 
+import dataclasses
+import hashlib
 import importlib.machinery
 import sys
 import types
@@ -207,6 +210,51 @@ def _core(**overrides: Any) -> Any:
         action_dim=ACTION_DIM,
         actions_per_chunk=CHUNK,
     )
+
+
+def test_seeded_requests_are_independent_of_batch_order_and_restore_rng(
+    stub_model, monkeypatch
+):
+    import random
+
+    import torch
+
+    def predict(*, env_obs, **kwargs):
+        value = torch.rand(1, CHUNK, ACTION_DIM) + np.random.random() + random.random()
+        return value, {}
+
+    monkeypatch.setattr(stub_model, "predict_action_batch", predict)
+    core = _core()
+    core.load()
+    first = _request(0, inference_parameters={"mode": "eval", "seed": 31})
+    second = _request(1, inference_parameters={"mode": "eval", "seed": 47})
+    numpy_state = np.random.get_state()
+    torch_state = torch.random.get_rng_state().clone()
+    python_state = random.getstate()
+    forward = core.infer_batch([first, second])
+    reverse = core.infer_batch([second, first])
+    alone = core.infer_batch([first])
+    assert all(item.error is None for item in [*forward, *reverse, *alone])
+    assert forward[0].auxiliary_outputs["policy_rng_acknowledged"] is True
+    np.testing.assert_array_equal(
+        payload_module.decode_array(forward[0].actions),
+        payload_module.decode_array(reverse[1].actions),
+    )
+    np.testing.assert_array_equal(
+        payload_module.decode_array(forward[0].actions),
+        payload_module.decode_array(alone[0].actions),
+    )
+    np.testing.assert_array_equal(np.random.get_state()[1], numpy_state[1])
+    torch.testing.assert_close(torch.random.get_rng_state(), torch_state)
+    assert random.getstate() == python_state
+
+
+def test_policy_rejects_same_shape_wrong_observation_contract(stub_model):
+    core = _core(observation_contract="panda-proprio")
+    core.load()
+    result = core.infer_batch([_request(0)])[0]
+    assert result.error is not None
+    assert not stub_model.calls
 
 
 def _request(index: int, *, state_dim: int = STATE_DIM, **overrides: Any) -> Any:
@@ -577,7 +625,9 @@ def test_unsupported_model_type_is_rejected_early() -> None:
     """Only the openpi family is currently supported; other families raise an
     explicit error instead of failing midway."""
     with pytest.raises(ValueError, match="out of M4 scope"):
-        build_policy_core(backend="zetta_openpi", policy_config={"model_type": "openvla_oft"})
+        build_policy_core(
+            backend="zetta_openpi", policy_config={"model_type": "openvla_oft"}
+        )
 
 
 def test_unknown_policy_backend_is_rejected() -> None:
@@ -590,7 +640,8 @@ def test_compat_key_carries_the_policy_hard_constraints() -> None:
     """cuda_graph's fixed batch size and ``openvla_oft``'s padding must change the
     ``compat_key``."""
     dynamic = policy_compat_constraints(
-        backend="zetta_openpi", policy_config={"model_path": "/x", "num_action_chunks": CHUNK}
+        backend="zetta_openpi",
+        policy_config={"model_path": "/x", "num_action_chunks": CHUNK},
     )
     fixed = policy_compat_constraints(
         backend="zetta_openpi",
@@ -632,3 +683,40 @@ def test_openpi_batchable_whitelist_keeps_shape_keys_in_the_key() -> None:
         {"mode": "eval", "num_steps": 5, "noise_seed": 7, "temperature": 0.9}, "openpi"
     )
     assert canonical == {"mode": "eval", "num_steps": 5}
+
+
+def test_frozen_artifacts_are_verified_and_cannot_be_relabeled(tmp_path, stub_model):
+    (tmp_path / "model.safetensors").write_bytes(b"unit-test-weights")
+    (tmp_path / "norm_stats.json").write_text("{}")
+    checkpoint = hashlib.sha256(b"unit-test-weights").hexdigest()
+    norm = hashlib.sha256(b"{}").hexdigest()
+    core = _core(
+        model_path=str(tmp_path),
+        checkpoint_sha256=checkpoint,
+        norm_stats_sha256=norm,
+        openpi_data={"norm_stats_path": str(tmp_path / "norm_stats.json")},
+    )
+    core.load()
+    result = core.infer_batch([_request(0)])[0]
+    assert result.auxiliary_outputs["checkpoint_sha256"] == checkpoint
+    assert result.auxiliary_outputs["norm_stats_sha256"] == norm
+    with pytest.raises(ValueError, match="new worker"):
+        core.update_weights("different-label")
+    (tmp_path / "model.safetensors").write_bytes(b"changed")
+    core.close()
+    with pytest.raises(ValueError, match="artifact mismatch"):
+        core.load()
+
+
+def test_mixed_seed_presence_does_not_invalidate_unseeded_request(stub_model):
+    core = _core(device="cpu")
+    core.load()
+    requests = [_request(0), _request(1)]
+    requests[0] = dataclasses.replace(requests[0], inference_parameters={"seed": 31})
+    responses = core.infer_batch(requests)
+    assert all(result.error is None for result in responses)
+    assert [r.auxiliary_outputs["batch_size"] for r in responses] == [1, 1]
+    assert [r.auxiliary_outputs["policy_rng_acknowledged"] for r in responses] == [
+        True,
+        False,
+    ]

@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zetta Contributors
 """The unified observation schema and its digest.
 
 Each env family's private ``_wrap_obs`` is uniformly normalized to the
@@ -80,6 +81,7 @@ class ObsSchema:
         state_dim: The state-vector dimension.
         has_instruction: Whether an instruction text is present.
         extra_keys: The (sorted) key set of ``extras``.
+        semantic_contracts: Versioned action/observation meaning, when declared.
     """
 
     main_image: FieldSpec = FieldSpec()
@@ -88,6 +90,7 @@ class ObsSchema:
     state_dim: int = 0
     has_instruction: bool = False
     extra_keys: tuple[str, ...] = ()
+    semantic_contracts: tuple[tuple[str, str], ...] = ()
 
     def digest(self) -> str:
         """Return the structural digest.
@@ -95,7 +98,7 @@ class ObsSchema:
         Returns:
             A 64-character hex sha256 digest.
         """
-        return codec.digest(self, prefix="rollout_runtime/obs_schema/v1")
+        return codec.digest(self, prefix="rollout_runtime/obs_schema/v2")
 
 
 def _field_spec(ref: PayloadRef | None) -> FieldSpec:
@@ -124,6 +127,11 @@ def schema_of(observation: Observation) -> ObsSchema:
         state_dim=len(observation.state),
         has_instruction=bool(observation.instruction),
         extra_keys=tuple(sorted(observation.extras)),
+        semantic_contracts=tuple(
+            (key, str(observation.extras[key]))
+            for key in ("action_contract", "observation_contract")
+            if key in observation.extras
+        ),
     )
 
 

@@ -1878,7 +1878,7 @@ class CodexStageAgent:
                     "recovery_fallback_exact": "resume_vla",
                     "exactly_one_critic_recovery_pair": True,
                 }
-                if self.environment_name == "geniesim"
+                if self.environment_name in {"geniesim", "maniskill"}
                 else None
             ),
             "frozen_parent_bundle": (
@@ -1940,7 +1940,7 @@ class CodexStageAgent:
                                 },
                                 "stop_when": (
                                     "exact literal budget_exhausted_or_success"
-                                    if self.environment_name == "geniesim"
+                                    if self.environment_name in {"geniesim", "maniskill"}
                                     else "string"
                                 ),
                             }
@@ -1948,12 +1948,12 @@ class CodexStageAgent:
                         "safety_constraints": ["string"],
                         "stop_condition": (
                             "exact literal official_success_or_budget"
-                            if self.environment_name == "geniesim"
+                            if self.environment_name in {"geniesim", "maniskill"}
                             else "string"
                         ),
                         "fallback": (
                             "exact literal resume_vla"
-                            if self.environment_name == "geniesim"
+                            if self.environment_name in {"geniesim", "maniskill"}
                             else "string"
                         ),
                         "evidence_ids": ["string"],

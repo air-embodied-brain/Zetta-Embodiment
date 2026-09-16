@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zetta Contributors
 """Payload encoding/decoding and size budget tests.
 
 Assertion focus: inline/ref threshold, 8 MiB ceiling, image encode/decode.
@@ -305,6 +306,13 @@ def test_obs_schema_digest_reacts_to_structure_changes() -> None:
     base = obs_schema.obs_schema_digest(_observation())
     assert base != obs_schema.obs_schema_digest(_observation(state_dim=7))
     assert base != obs_schema.obs_schema_digest(_observation(wrist=False))
+
+
+def test_obs_schema_digest_separates_same_shape_semantic_contracts() -> None:
+    first, second = _observation(), _observation()
+    first.extras["observation_contract"] = "joint_state_v1"
+    second.extras["observation_contract"] = "object_state_v1"
+    assert obs_schema.obs_schema_digest(first) != obs_schema.obs_schema_digest(second)
 
 
 def test_env_output_keys_match_rlinf_schema() -> None:
