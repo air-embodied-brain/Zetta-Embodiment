@@ -1,5 +1,9 @@
 # Zetta
 
+<div align="center">
+  <img src="z_trans_logo.png" alt="Z TRANS logo" width="420"/>
+</div>
+
 [![Papers with Code: SOTA on RoboCasa365 Atomic-Seen](https://paperswithcode.co/api/v1/papers/2608.16590/leaderboard-badge.svg?eval=26154&live=1)](https://paperswithcode.co/api/v1/papers/2608.16590/leaderboard-badge-link?eval=26154)
 
 <div align="center">
