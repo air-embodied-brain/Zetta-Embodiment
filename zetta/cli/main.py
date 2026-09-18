@@ -94,6 +94,7 @@ def _build_argparser() -> argparse.ArgumentParser:
     ap.add_argument("--model", default=None,
                     help="Model id. For the 'api' planner, prefix the provider "
                          "(e.g. anthropic:claude-opus-4-8, openai:gpt-5.5, "
+                         "openai:gpt-6-sol, "
                          "openai-chat:glm-5.2). For claude_code/codex this "
                          "overrides the backend default model.")
     ap.add_argument("--base-url", default=None,

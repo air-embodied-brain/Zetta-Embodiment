@@ -1,15 +1,10 @@
-# LIBERO + real Pi0.5 weights, single-4090 local smoke/throughput preset.
+# LIBERO + real Pi0.5 weights, single-4090 local JPEG smoke/throughput preset.
 #
-# Purpose: drive multiple end-to-end episodes through the Gateway's public
-# API (create_sessions / reset / run_episode / close_sessions), with real
-# LIBERO simulation on the EnvWorker side and a real Pi0.5 checkpoint on the
-# RolloutWorker side -- never calling the simulator or the model directly.
-# Used to compare PNG vs JPEG image-encode throughput/latency end-to-end.
-#
-# Differs from a100_libero_pi05.yaml only in scale (this is a single-GPU
-# host, not 8xA100) and transport (inproc, to keep the harness simple for a
-# single-process comparison run). Copy this preset and change
-# ``env_config.image_codec`` to ``jpeg`` for the lossy comparison run.
+# This is the explicit lossy counterpart to libero_pi05_4090.yaml. JPEG is
+# experimental for real Pi0.5 rollouts: the performance report records
+# non-finite-action failures observed with this checkpoint. Keep the PNG
+# preset as the production/default configuration unless JPEG robustness has
+# been measured for the target checkpoint.
 
 env_family: libero
 env_config:
@@ -26,7 +21,7 @@ env_config:
   return_all_frames: false
   libero_variant: pro
   gpu_memory_reserve_mib: 800
-  image_codec: png
+  image_codec: jpeg
   jpeg_quality: 90
 
 cluster:

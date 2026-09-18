@@ -680,7 +680,7 @@ class CosmosLitePolicyCore:
                     raise _RequestValidationError(
                         "single image_layout requires Observation.main_image"
                     )
-                upstream["observation/image"] = payload_module.decode_image(
+                upstream["observation/image"] = payload_module.decode_payload(
                     observation.main_image
                 )
             else:
@@ -693,14 +693,14 @@ class CosmosLitePolicyCore:
                         "robolab_three_view requires main_image, wrist_image, "
                         "and one extra_view_image"
                     )
-                upstream["observation/wrist_image_left"] = payload_module.decode_image(
+                upstream["observation/wrist_image_left"] = payload_module.decode_payload(
                     observation.wrist_image
                 )
                 upstream["observation/exterior_image_1_left"] = (
-                    payload_module.decode_image(observation.main_image)
+                    payload_module.decode_payload(observation.main_image)
                 )
                 upstream["observation/exterior_image_2_left"] = (
-                    payload_module.decode_image(observation.extra_view_images[0])
+                    payload_module.decode_payload(observation.extra_view_images[0])
                 )
         except _RequestValidationError:
             raise

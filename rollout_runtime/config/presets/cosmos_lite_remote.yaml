@@ -76,4 +76,3 @@ admission:
 payload:
   inline_threshold_bytes: 262144
   request_limit_bytes: 8388608
-  image_codec: png

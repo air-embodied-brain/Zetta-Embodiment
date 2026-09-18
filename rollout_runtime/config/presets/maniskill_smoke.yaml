@@ -60,4 +60,3 @@ rollout_worker:
     max_wait_ms: 5
     max_inflight_per_session: 1
 payload:
-  image_codec: png

@@ -27,9 +27,10 @@ class PayloadCodec(enum.Enum):
     """PNG-compressed uint8 HWC image (lossless)."""
 
     JPEG = "jpeg"
-    """JPEG-compressed uint8 HWC image (lossy, GPU-accelerated via nvJPEG when
-    available). Opt-in via ``PayloadConfig.image_codec = "jpeg"``; legacy-parity
-    hash comparisons must keep using PNG."""
+    """JPEG-compressed uint8 HWC image (lossy; RGB encoding uses the CUDA
+    nvJPEG path when available, while decoding uses torchvision's supported
+    path). Opt-in via the owning environment's image codec configuration;
+    legacy-parity hash comparisons must keep using PNG."""
 
 
 @dataclasses.dataclass(frozen=True, kw_only=True)

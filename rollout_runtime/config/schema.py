@@ -232,15 +232,12 @@ class PayloadConfig:
             warning, but v1 still inlines it.
         request_limit_bytes: The hard per-request limit; exceeding it raises
             ``INVALID_ARGUMENT``.
-        image_codec: ``"png"`` (default, lossless) or ``"jpeg"`` (lossy,
-            nvJPEG-accelerated when a CUDA device is visible; not used by
-            legacy-parity hash comparisons).
+        Image codec selection is owned by each environment family. This
+            section only controls generic payload budgets.
     """
 
     inline_threshold_bytes: int = 256 * 1024
     request_limit_bytes: int = 8 * 1024 * 1024
-    image_codec: str = "png"
-    jpeg_quality: int = 90
 
 
 @dataclasses.dataclass(kw_only=True)

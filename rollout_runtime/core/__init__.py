@@ -39,6 +39,7 @@ from rollout_runtime.core.payload import (
     encode_image,
     encode_image_jpeg,
     encode_payload,
+    jpeg_available,
     nvjpeg_available,
 )
 from rollout_runtime.core.policy_inference import (
@@ -72,6 +73,7 @@ __all__ = [
     "encode_image_jpeg",
     "encode_payload",
     "get_env_family",
+    "jpeg_available",
     "normalize_chunk_outcome",
     "nvjpeg_available",
     "obs_schema_digest",

@@ -29,8 +29,9 @@ Key divergences:
    JSON/HTTP round trip.
 3. **Images are decoded from ``PayloadRef``**: ``Observation.main_image`` /
    ``wrist_image`` / ``extra_view_images`` are encoded payloads that need
-   ``payload_module.decode_image`` to restore them into uint8 arrays before
-   feeding them to GR00T's ``video.*`` keys.
+   ``payload_module.decode_payload`` to restore them into uint8 arrays before
+   feeding them to GR00T's ``video.*`` keys. This keeps PNG and opt-in JPEG
+   observations on the same consumer path.
 4. **Action chunks are converted back to the 12-dim flat action** with
    ``groot_core.action_dict_to_flat_chunks`` -- the same conversion logic
    found at the end of ``groot_client.py``'s ``Gr00tClient.act``, same
@@ -337,7 +338,7 @@ class GrootPolicyCore:
         for key, ref in image_slots.items():
             if ref is None:
                 raise ValueError(f"observation is missing required GR00T video {key!r}")
-            image = payload_module.decode_image(ref)
+            image = payload_module.decode_payload(ref)
             video_payload[key] = [image.tolist()]
 
         instruction = (

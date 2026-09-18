@@ -121,7 +121,8 @@ def build_planner(
             raise ValueError(
                 "the 'api' planner requires a model id; pass --model with a "
                 "provider prefix (e.g. 'anthropic:claude-opus-4-8', "
-                "'openai:gpt-5.5', 'openai-chat:glm-5.2')."
+                "'openai:gpt-5.5', 'openai:gpt-6-sol', "
+                "'openai-chat:glm-5.2')."
             )
 
         import inspect

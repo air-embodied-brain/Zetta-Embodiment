@@ -68,6 +68,7 @@ __all__ = [
     "encode_image",
     "encode_image_jpeg",
     "encode_payload",
+    "jpeg_available",
     "nvjpeg_available",
     "stats",
 ]
@@ -85,10 +86,10 @@ PNG_COMPRESS_LEVEL = 6
 same array."""
 
 JPEG_DEFAULT_QUALITY = 90
-"""Default JPEG quality (1-100) used by ``encode_image_jpeg``/``encode_payload``
-when the caller does not pin one explicitly. 90 keeps blocking artifacts well
-below the level that would perturb a VLA policy's visual input while still
-capturing most of nvJPEG's throughput advantage over PNG."""
+"""Default JPEG quality (1-100) used by ``encode_image_jpeg`` when the caller
+does not pin one explicitly. JPEG remains opt-in; ``encode_payload`` never
+selects it automatically. Quality 90 is the measured performance setting, not
+a guarantee that a particular VLA checkpoint is robust to lossy inputs."""
 
 _PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 _CHANNELS_TO_COLOR_TYPE = {1: 0, 2: 4, 3: 2, 4: 6}
@@ -337,25 +338,94 @@ def encode_image(array: np.ndarray) -> InlineBytes:
 
 
 def nvjpeg_available() -> bool:
-    """Return whether GPU-accelerated JPEG encode/decode (nvJPEG via
-    ``torchvision.io``) can be used in this process.
+    """Return whether the CUDA JPEG encoder path is available.
 
     This never raises: any import or CUDA-probe failure is treated as
     "unavailable" so callers can fall back to PNG without a hard crash.
 
     Returns:
         ``True`` if ``torch``+``torchvision`` are importable and a CUDA
-        device is visible.
+        device is visible. JPEG decoding currently uses torchvision's
+        supported decode path and is not included in this probe.
     """
     try:
         import torch
-        import torchvision.io  # noqa: F401
+        from torchvision.io import encode_jpeg  # noqa: F401
     except Exception:
         return False
     try:
         return bool(torch.cuda.is_available())
     except Exception:
         return False
+
+
+def jpeg_available() -> bool:
+    """Return whether the torchvision JPEG codec can be imported.
+
+    This reports CPU JPEG availability as well as CUDA availability. It never
+    raises, so callers can use it for capability reporting without turning a
+    missing optional dependency into a process failure.
+
+    Returns:
+        ``True`` when ``torchvision.io`` exposes the JPEG encoder and decoder.
+    """
+    try:
+        from torchvision.io import decode_jpeg, encode_jpeg  # noqa: F401
+    except Exception:
+        return False
+    return True
+
+
+def _validate_jpeg_quality(quality: int) -> int:
+    if isinstance(quality, bool) or not isinstance(quality, int):
+        raise RuntimeApiError(
+            make_error(
+                ErrorCode.INVALID_ARGUMENT,
+                f"jpeg quality must be an integer within 1..100, got {quality!r}",
+            )
+        )
+    if not 1 <= quality <= 100:
+        raise RuntimeApiError(
+            make_error(
+                ErrorCode.INVALID_ARGUMENT,
+                f"jpeg quality must be within 1..100, got {quality}",
+            )
+        )
+    return quality
+
+
+def _validate_jpeg_ref(ref: InlineBytes) -> None:
+    if ref.dtype != "uint8":
+        raise RuntimeApiError(
+            make_error(
+                ErrorCode.INVALID_ARGUMENT,
+                "jpeg payload must declare a uint8 HWC shape",
+            )
+        )
+    try:
+        shape = tuple(ref.shape)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeApiError(
+            make_error(
+                ErrorCode.INVALID_ARGUMENT,
+                "jpeg payload must declare a valid integer HWC shape",
+            )
+        ) from exc
+    if any(isinstance(dim, bool) or not isinstance(dim, int) for dim in shape):
+        raise RuntimeApiError(
+            make_error(
+                ErrorCode.INVALID_ARGUMENT,
+                "jpeg payload must declare a valid integer HWC shape",
+            )
+        )
+    if len(shape) != 3 or any(dim <= 0 for dim in shape) or shape[2] not in (1, 3):
+        raise RuntimeApiError(
+            make_error(
+                ErrorCode.INVALID_ARGUMENT,
+                "jpeg payload shape must be positive HWC with 1 or 3 channels, "
+                f"got {shape}",
+            )
+        )
 
 
 def encode_image_jpeg(
@@ -385,6 +455,7 @@ def encode_image_jpeg(
         RuntimeApiError: The dtype/channel count is unsupported, or
             ``torch``/``torchvision`` are not installed in this process.
     """
+    quality = _validate_jpeg_quality(quality)
     if array.dtype != np.uint8:
         raise RuntimeApiError(
             make_error(
@@ -394,7 +465,11 @@ def encode_image_jpeg(
         )
     if array.ndim == 2:
         array = array[:, :, None]
-    if array.ndim != 3 or array.shape[2] not in (1, 3):
+    if (
+        array.ndim != 3
+        or any(int(dim) <= 0 for dim in array.shape[:2])
+        or array.shape[2] not in (1, 3)
+    ):
         raise RuntimeApiError(
             make_error(
                 ErrorCode.INVALID_ARGUMENT,
@@ -413,13 +488,23 @@ def encode_image_jpeg(
                 f"jpeg codec requires torch+torchvision, unavailable: {exc}",
             )
         ) from exc
-    # torchvision wants CHW.
-    chw = torch.from_numpy(contiguous).permute(2, 0, 1).contiguous()
     # nvJPEG's CUDA encoder path only accepts 3-channel input; grayscale
-    # stays on the CPU encoder (rare in practice -- camera streams are RGB).
-    if torch.cuda.is_available() and chw.shape[0] == 3:
-        chw = chw.cuda(non_blocking=True)
-    data = bytes(encode_jpeg(chw, quality=quality).cpu().numpy().tobytes())
+    # stays on the CPU encoder. The launcher is responsible for constraining
+    # each worker's visible/current CUDA device; use that current device
+    # explicitly rather than relying on Tensor.cuda()'s implicit default.
+    try:
+        # torchvision wants CHW.
+        chw = torch.from_numpy(contiguous).permute(2, 0, 1).contiguous()
+        use_cuda = bool(torch.cuda.is_available()) and chw.shape[0] == 3
+        if use_cuda:
+            device = torch.device("cuda", torch.cuda.current_device())
+            chw = chw.to(device=device, non_blocking=True)
+        encoded = encode_jpeg(chw, quality=quality)
+        data = bytes(encoded.cpu().numpy().tobytes())
+    except Exception as exc:
+        raise RuntimeApiError(
+            make_error(ErrorCode.INTERNAL, f"jpeg encoding failed: {exc}")
+        ) from exc
     _record_encoded(len(data))
     return InlineBytes(
         codec=PayloadCodec.JPEG,
@@ -447,6 +532,7 @@ def decode_image_jpeg(ref: PayloadRef) -> np.ndarray:
         raise RuntimeApiError(
             make_error(ErrorCode.INVALID_ARGUMENT, "expected a jpeg inline payload")
         )
+    _validate_jpeg_ref(ref)
     try:
         import torch
         from torchvision.io import ImageReadMode, decode_jpeg
@@ -457,11 +543,16 @@ def decode_image_jpeg(ref: PayloadRef) -> np.ndarray:
                 f"jpeg codec requires torch+torchvision, unavailable: {exc}",
             )
         ) from exc
-    channels = ref.shape[2] if len(ref.shape) == 3 else 1
+    channels = ref.shape[2]
     mode = ImageReadMode.GRAY if channels == 1 else ImageReadMode.RGB
-    encoded = torch.frombuffer(bytearray(ref.data), dtype=torch.uint8)
-    chw = decode_jpeg(encoded, mode=mode)
-    array = chw.permute(1, 2, 0).contiguous().cpu().numpy()
+    try:
+        encoded = torch.frombuffer(bytearray(ref.data), dtype=torch.uint8)
+        chw = decode_jpeg(encoded, mode=mode)
+        array = chw.permute(1, 2, 0).contiguous().cpu().numpy()
+    except Exception as exc:
+        raise RuntimeApiError(
+            make_error(ErrorCode.INVALID_ARGUMENT, f"jpeg payload decode failed: {exc}")
+        ) from exc
     if tuple(ref.shape) != array.shape:
         raise RuntimeApiError(
             make_error(
@@ -479,8 +570,8 @@ def encode_payload(array: np.ndarray) -> InlineBytes:
 
     uint8 2D/3D arrays (with 1/2/3/4 channels) use PNG; everything else
     uses raw. This never selects JPEG: JPEG is lossy and opt-in only
-    through ``encode_image_jpeg`` (or a backend explicitly branching on
-    ``PayloadConfig.image_codec``), so callers who need bit-exact
+    through ``encode_image_jpeg`` (or an environment backend explicitly
+    selecting JPEG), so callers who need bit-exact
     legacy-parity images are never surprised by an automatic lossy choice.
 
     Args:

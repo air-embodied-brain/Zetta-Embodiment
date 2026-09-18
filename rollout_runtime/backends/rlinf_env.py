@@ -294,7 +294,11 @@ class LiberoEnvConfig:
                     "expected 'png' | 'jpeg'",
                 )
             )
-        if not 1 <= instance.jpeg_quality <= 100:
+        if (
+            isinstance(instance.jpeg_quality, bool)
+            or not isinstance(instance.jpeg_quality, int)
+            or not 1 <= instance.jpeg_quality <= 100
+        ):
             raise RuntimeApiError(
                 make_error(
                     ErrorCode.INVALID_ARGUMENT,

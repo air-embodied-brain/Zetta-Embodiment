@@ -1,14 +1,18 @@
-# LIBERO-Pro 图像编码优化（PNG → nvJPEG）性能汇报
+# LIBERO-Pro 图像编码优化（PNG → JPEG/nvJPEG encoder）性能汇报
 
 ## 一、结论摘要
 
-| 测试层级 | 对比方式 | nvJPEG 相对 PNG | 备注 |
+| 测试层级 | 对比方式 | JPEG 相对 PNG | 备注 |
 |---|---|---|---|
 | 编码本身（隔离） | 256×256×3，main+wrist 每 step 2 张图 | **延时 ↓ 27x，吞吐 ↑ 27x** | 纯 codec 微基准，不含仿真/推理 |
 | Env 仿真侧（隔离推理） | 真实 LIBERO-Pro 仿真+渲染+编码，fake policy | **延时 ↓ 2.2x，吞吐 ↑ 2.2x** | 通过 Gateway `action_step`，3 次重复验证稳定 |
 | 端到端 rollout（真实模型） | 真实 Pi0.5 + LIBERO-Pro，走完整 Runtime | **持平，±10~30% 抖动** | 推理耗时（数百 ms/step）掩盖了编码耗时（个位 ms）的差异 |
 
-同时发现一个**必须评估的代价**：nvJPEG 有损压缩在真实 Pi0.5 模型上偶发触发 `POLICY_FAILURE`（"policy produced non-finite actions"），PNG 全程零次。
+同时发现一个**必须评估的代价**：JPEG 有损压缩在真实 Pi0.5 模型上偶发触发
+`POLICY_FAILURE`（"policy produced non-finite actions"），PNG 全程零次。
+本实现的 CUDA 加速目标是 RGB JPEG **编码**；解码使用
+`torchvision.io.decode_jpeg` 的受支持路径，本报告没有把它宣称为 CUDA/nvJPEG
+解码，也没有验证所有 torchvision/CUDA 版本组合。
 
 ---
 
@@ -16,14 +20,18 @@
 
 在 RTX 4090 上直接调用 `rollout_runtime.core.payload.encode_image` / `encode_image_jpeg`，输入 256×256×3 uint8 图像，每次模拟 main+wrist 两张相机图（对应 `rlinf_env.py` 每个物理 step 的真实编码调用次数）。
 
-![Chart 1](img-encode-report/chart1_codec_only.png)
+![Chart 1](chart1_codec_only.png)
 
 | Codec | 延时（mean，2 张图/step） | 吞吐 | 编码后大小 |
 |---|---|---|---|
 | PNG（zlib/DEFLATE，CPU） | 13.6 ms | 73 steps/s | ~355 KB |
-| nvJPEG q90（GPU，torchvision.io） | 0.50 ms | 1988 steps/s | ~152 KB |
+| JPEG q90（GPU encoder，torchvision.io） | 0.50 ms | 1988 steps/s | ~152 KB |
 
-这与 LIBERO-Pro Profiling 汇报中"PNG 编码 46.1ms/次逼近仿真本身"的判断方向一致：PNG 的 DEFLATE 是纯 CPU 计算，nvJPEG 把这部分工作转移到 GPU，数量级更快。
+该基准使用 RTX 4090、JPEG quality=90 和 `torchvision.io`；原始记录没有保留
+torch/torchvision 的精确版本。复现实验应同时记录两者版本、CUDA/driver、当前
+device，以及明确注明这里只验证 GPU encoder，未把 JPEG decode 计入 nvJPEG 加速。
+
+这与 LIBERO-Pro Profiling 汇报中"PNG 编码 46.1ms/次逼近仿真本身"的判断方向一致：PNG 的 DEFLATE 是纯 CPU 计算，JPEG encoder 把这部分工作转移到 GPU，数量级更快。
 
 ---
 
@@ -31,7 +39,7 @@
 
 上面的隔离基准只测了 codec 函数本身，没有仿真、渲染、Gateway 调度的真实开销。这一层用 `RuntimeGateway.action_step`（零动作 chunk）驱动真实 LIBERO-Pro 环境，RolloutWorker 侧用 fake policy backend（只是为了让 runtime 能启动，不参与被测路径），因此测到的是**仿真 + 渲染 + 图像编码 + Gateway 调度**的真实耗时，且完全不受 VLA 推理干扰。
 
-![Chart 2](img-encode-report/chart2_env_only.png)
+![Chart 2](chart2_env_only.png)
 
 4 并发 session，3 次独立重复：
 
@@ -51,7 +59,7 @@
 
 通过 `EvaluationAdapter` 驱动 `RuntimeGateway.create_sessions/reset/run_episode/close_sessions`，跑真实 LIBERO-Pro + 真实 Pi0.5（`RLinf-Pi05-LIBERO-130-fullshot-SFT`）checkpoint，全程走 Gateway，不直接调用仿真或模型。为保证两个 codec 编码的图像数量一致，强制 `ignore_terminations=True` 让每个 episode 跑满固定 step 数，并用**实际执行 step 数**（而非 episode 数）归一化吞吐/延时。
 
-![Chart 3](img-encode-report/chart3_e2e_rollout.png)
+![Chart 3](chart3_e2e_rollout.png)
 
 | 对比组 | PNG steps/s | JPEG steps/s | 两边 step 数 |
 |---|---|---|---|
@@ -67,11 +75,11 @@
 
 ---
 
-## 五、收益衰减全景：nvJPEG 的优势去哪了
+## 五、收益衰减全景：GPU JPEG encoder 的优势去哪了
 
-![Chart 4](img-encode-report/chart4_speedup_funnel.png)
+![Chart 4](chart4_speedup_funnel.png)
 
-从纯编码隔离基准（27x）→ 仿真侧隔离推理（2.2x）→ 端到端真实模型（1.3x，step 数匹配时），nvJPEG 的相对收益随着"被掩盖的固定成本"越来越多而逐级收窄。这说明：
+从纯编码隔离基准（27x）→ 仿真侧隔离推理（2.2x）→ 端到端真实模型（1.3x，step 数匹配时），GPU JPEG encoder 的相对收益随着"被掩盖的固定成本"越来越多而逐级收窄。这说明：
 
 1. **图像编码优化对"仿真吞吐"本身是真实且可观的收益**（2.2x），符合 profiling 报告的判断。
 2. **在当前 Pi0.5 推理延时主导的端到端链路里，编码优化对整体吞吐的贡献有限**（约 1.3x，且要接受一定的 non-finite 故障率）。
@@ -79,9 +87,9 @@
 
 ## 六、建议
 
-- **仿真专用场景**（数据采集、纯 rollout 压测、不涉及真实策略）：可直接启用 nvJPEG，收益稳定在 2x 以上，零观测到的副作用。
+- **仿真专用场景**（数据采集、纯 rollout 压测、不涉及真实策略）：可直接启用 GPU JPEG encoder，收益稳定在 2x 以上，零观测到的副作用。
 - **真实 campaign（真实 VLA 推理）**：先评估 ~15% 量级的 non-finite 概率对成功率的实际影响；建议在正式启用前，对目标 checkpoint 做一次 JPEG 图像的鲁棒性检验（或做 JPEG 增强微调），而不是直接切换。
-- 两种编码都已实现为运行时可配置项（`LiberoEnvConfig.image_codec`），PNG 仍是默认值，不影响任何现有 campaign。
+- 两种编码都已实现为运行时可配置项（`LiberoEnvConfig.image_codec`），PNG 仍是默认值，不影响任何现有 campaign；生产消费者必须通过 `decode_payload()` 同时支持 PNG/JPEG，不能假设所有图像都是 PNG。
 
 ---
 

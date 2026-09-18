@@ -165,4 +165,3 @@ payload:
   # 单请求硬上限 8 MiB 不变。调阈值前先看 core/payload 的计数（§2.5）。
   inline_threshold_bytes: 262144
   request_limit_bytes: 8388608
-  image_codec: png
