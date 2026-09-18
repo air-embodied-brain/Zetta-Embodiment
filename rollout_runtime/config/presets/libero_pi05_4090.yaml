@@ -1,0 +1,116 @@
+# LIBERO + real Pi0.5 weights, single-4090 local smoke/throughput preset.
+#
+# Purpose: drive multiple end-to-end episodes through the Gateway's public
+# API (create_sessions / reset / run_episode / close_sessions), with real
+# LIBERO simulation on the EnvWorker side and a real Pi0.5 checkpoint on the
+# RolloutWorker side -- never calling the simulator or the model directly.
+# Used to compare PNG vs JPEG image-encode throughput/latency end-to-end.
+#
+# Differs from a100_libero_pi05.yaml only in scale (this is a single-GPU
+# host, not 8xA100) and transport (inproc, to keep the harness simple for a
+# single-process comparison run). Override --model-path / --codec at the CLI
+# rather than editing this file with a machine-specific path.
+
+env_family: libero
+env_config:
+  task_suite_name: libero_10
+  task_id: 0
+  max_episode_steps: 200
+  camera_height: 256
+  camera_width: 256
+  camera_depths: true
+  num_steps_wait: 15
+  action_dim: 7
+  chunk_size: 5
+  action_model_type: openpi
+  return_all_frames: false
+  libero_variant: pro
+  gpu_memory_reserve_mib: 800
+
+cluster:
+  num_nodes: 1
+  component_placement: {}
+
+gateway:
+  gateway_epoch: 1
+  maintenance_interval_seconds: 1.0
+  default_lease_seconds: 1800.0
+  error_retention_seconds: 300.0
+  result_ttl_seconds: 300.0
+  heartbeat_timeout_seconds: 60.0
+  max_concurrency_per_rank: 32
+  metrics_namespace: rr
+
+transport:
+  kind: inproc
+  command_queue_size: 256
+  control_queue_size: 32
+  result_queue_size: 512
+  infer_request_queue_size: 256
+  infer_response_queue_size: 256
+  command_timeout_seconds: 600.0
+
+env_worker:
+  group_name: env
+  num_ranks: 1
+  placement_strategy: node
+  max_sessions_per_rank: 4
+  default_pool_size: 1
+  seed_offset: 0
+
+rollout_worker:
+  group_name: rollout
+  num_ranks: 1
+  placement_strategy: node
+  tensor_parallel_size: 1
+  pipeline_parallel_size: 1
+  policy_id: pi05
+  policy_family: openpi
+  policy_backend: zetta_openpi
+  device: cuda
+  dtype: bfloat16
+  max_concurrent_inferences: 8
+  policy_config:
+    model_type: openpi
+    model_path: /path/to/checkpoints/RLinf-Pi05-LIBERO-SFT
+    precision: null
+    num_action_chunks: 5
+    action_dim: 7
+    num_steps: 5
+    use_proprio: true
+    add_value_head: false
+    default_mode: eval
+    model_version: pi05-libero-sft
+    enable_cuda_graph: false
+    cuda_graph_batch_size: null
+    enable_torch_compile: false
+    family_params:
+      config_name: pi05_libero
+      num_images_in_input: 2
+      noise_level: 0.5
+      train_expert_only: true
+      noise_method: flow_sde
+      value_after_vlm: false
+      value_vlm_mode: mean_token
+      detach_critic_input: null
+      use_dsrl: false
+  scheduler:
+    max_batch_size: 4
+    max_wait_ms: 20.0
+    max_queue_depth: 64
+    max_inflight_per_application: 32
+    max_inflight_per_session: 1
+    fixed_batch_size: null
+
+admission:
+  require_auth: false
+  tokens: {}
+  max_sessions_per_application: 16
+  max_inflight_operations_per_application: 64
+  max_inflight_operations_per_session: 2
+  max_total_inflight_operations: 128
+
+payload:
+  inline_threshold_bytes: 262144
+  request_limit_bytes: 8388608
+  image_codec: png

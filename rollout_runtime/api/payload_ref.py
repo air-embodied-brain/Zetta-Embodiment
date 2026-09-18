@@ -24,7 +24,12 @@ class PayloadCodec(enum.Enum):
     """Raw contiguous bytes, restored to an array with ``shape`` / ``dtype``."""
 
     PNG = "png"
-    """PNG-compressed uint8 HWC image."""
+    """PNG-compressed uint8 HWC image (lossless)."""
+
+    JPEG = "jpeg"
+    """JPEG-compressed uint8 HWC image (lossy, GPU-accelerated via nvJPEG when
+    available). Opt-in via ``PayloadConfig.image_codec = "jpeg"``; legacy-parity
+    hash comparisons must keep using PNG."""
 
 
 @dataclasses.dataclass(frozen=True, kw_only=True)

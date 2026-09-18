@@ -83,6 +83,72 @@ def test_png_accepts_2d_and_normalizes_to_hwc() -> None:
     assert np.array_equal(payload_module.decode_payload(ref)[:, :, 0], grey)
 
 
+# ------------------------------------------------------------------ JPEG codec
+
+
+def _skip_without_nvjpeg() -> None:
+    if not payload_module.nvjpeg_available():
+        pytest.skip("torch+torchvision with CUDA are required for the jpeg codec")
+
+
+def test_jpeg_round_trip_is_lossy_but_close() -> None:
+    """JPEG is lossy: decoded pixels should be close to, but not necessarily
+    exactly equal to, the source."""
+    _skip_without_nvjpeg()
+    image = _image(height=64, width=64, channels=3)
+    ref = payload_module.encode_image_jpeg(image, quality=90)
+    assert isinstance(ref, InlineBytes)
+    assert ref.codec is PayloadCodec.JPEG
+    assert ref.shape == image.shape
+    assert ref.dtype == "uint8"
+    decoded = payload_module.decode_payload(ref)
+    assert decoded.shape == image.shape
+    assert decoded.dtype == np.uint8
+    # Mean absolute error should be small at quality=90 for random noise.
+    assert float(np.abs(decoded.astype(np.int16) - image.astype(np.int16)).mean()) < 40
+
+
+def test_jpeg_grayscale_round_trip() -> None:
+    """Single-channel input must round-trip through the grayscale JPEG path."""
+    _skip_without_nvjpeg()
+    grey = _image(height=32, width=32, channels=1)
+    ref = payload_module.encode_image_jpeg(grey)
+    decoded = payload_module.decode_payload(ref)
+    assert decoded.shape == grey.shape
+
+
+def test_jpeg_rejects_non_uint8() -> None:
+    """JPEG only accepts uint8, same contract as PNG."""
+    _skip_without_nvjpeg()
+    with pytest.raises(RuntimeApiError) as excinfo:
+        payload_module.encode_image_jpeg(np.zeros((4, 4, 3), dtype=np.float32))
+    assert excinfo.value.info.code is ErrorCode.INVALID_ARGUMENT
+
+
+def test_jpeg_rejects_unsupported_channel_count() -> None:
+    """JPEG has no alpha channel; 4-channel input must be rejected rather than
+    silently dropping a channel."""
+    _skip_without_nvjpeg()
+    with pytest.raises(RuntimeApiError) as excinfo:
+        payload_module.encode_image_jpeg(np.zeros((4, 4, 4), dtype=np.uint8))
+    assert excinfo.value.info.code is ErrorCode.INVALID_ARGUMENT
+
+
+def test_decode_image_jpeg_rejects_wrong_codec() -> None:
+    """Feeding a PNG ref into the jpeg decoder must fail closed."""
+    png_ref = payload_module.encode_image(_image())
+    with pytest.raises(RuntimeApiError) as excinfo:
+        payload_module.decode_image_jpeg(png_ref)
+    assert excinfo.value.info.code is ErrorCode.INVALID_ARGUMENT
+
+
+def test_encode_payload_never_picks_jpeg() -> None:
+    """The automatic codec chooser stays PNG-only; JPEG is opt-in only."""
+    image = _image()
+    ref = payload_module.encode_payload(image)
+    assert ref.codec is PayloadCodec.PNG
+
+
 def test_png_rejects_non_uint8() -> None:
     """PNG only accepts uint8."""
     with pytest.raises(RuntimeApiError) as excinfo:

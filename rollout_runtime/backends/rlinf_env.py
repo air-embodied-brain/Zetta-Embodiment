@@ -181,6 +181,14 @@ class LiberoEnvConfig:
             LIBERO scene's first reset. The process-local GPU guard uses it
             to prevent concurrent native allocations from overcommitting a
             device. Zero disables the guard.
+        image_codec: ``"png"`` (default, lossless) or ``"jpeg"`` (lossy,
+            nvJPEG-accelerated via ``torchvision.io`` when CUDA is visible).
+            PNG stays the default because legacy-parity hash comparisons
+            require bit-exact images; ``"jpeg"`` trades a small amount of
+            per-pixel fidelity for substantially lower per-step image-encode
+            latency on camera-heavy campaigns.
+        jpeg_quality: JPEG quality (``1``-``100``) used when
+            ``image_codec="jpeg"``.
     """
 
     task_suite_name: str = "libero_10"
@@ -213,6 +221,8 @@ class LiberoEnvConfig:
 
     assets_root: str | None = None
     gpu_memory_reserve_mib: int = 800
+    image_codec: str = "png"
+    jpeg_quality: int = 90
 
     @classmethod
     def from_mapping(cls, config: Mapping[str, Any] | None) -> LiberoEnvConfig:
@@ -274,6 +284,21 @@ class LiberoEnvConfig:
                     ErrorCode.INVALID_ARGUMENT,
                     f"unknown libero_variant {instance.libero_variant!r}; "
                     "expected 'standard' | 'pro' | 'plus'",
+                )
+            )
+        if instance.image_codec not in ("png", "jpeg"):
+            raise RuntimeApiError(
+                make_error(
+                    ErrorCode.INVALID_ARGUMENT,
+                    f"unknown image_codec {instance.image_codec!r}; "
+                    "expected 'png' | 'jpeg'",
+                )
+            )
+        if not 1 <= instance.jpeg_quality <= 100:
+            raise RuntimeApiError(
+                make_error(
+                    ErrorCode.INVALID_ARGUMENT,
+                    f"jpeg_quality must be within 1..100, got {instance.jpeg_quality}",
                 )
             )
         return instance
@@ -1478,15 +1503,22 @@ class LiberoEnvCore:
             if slot.instruction
             else (str(descriptions[lane]) if lane < len(descriptions) else "")
         )
+        encode_camera = (
+            (
+                lambda frame: payload_module.encode_image_jpeg(
+                    frame, quality=self.config.jpeg_quality
+                )
+            )
+            if self.config.image_codec == "jpeg"
+            else payload_module.encode_image
+        )
         observation = Observation(
             session_id=SessionId(""),
             episode_id=EpisodeId(0),
             step_index=slot.step_index,
-            main_image=payload_module.encode_image(main),
+            main_image=encode_camera(main),
             wrist_image=(
-                payload_module.encode_image(
-                    np.ascontiguousarray(_to_numpy(wrist_raw)[lane])
-                )
+                encode_camera(np.ascontiguousarray(_to_numpy(wrist_raw)[lane]))
                 if wrist_raw is not None
                 else None
             ),
