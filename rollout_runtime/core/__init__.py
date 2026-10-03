@@ -37,7 +37,10 @@ from rollout_runtime.core.payload import (
     decode_payload,
     encode_array,
     encode_image,
+    encode_image_jpeg,
     encode_payload,
+    jpeg_available,
+    nvjpeg_available,
 )
 from rollout_runtime.core.policy_inference import (
     BATCHABLE_PARAM_KEYS,
@@ -67,9 +70,12 @@ __all__ = [
     "decode_payload",
     "encode_array",
     "encode_image",
+    "encode_image_jpeg",
     "encode_payload",
     "get_env_family",
+    "jpeg_available",
     "normalize_chunk_outcome",
+    "nvjpeg_available",
     "obs_schema_digest",
     "observations_to_env_output",
     "register_env_family",

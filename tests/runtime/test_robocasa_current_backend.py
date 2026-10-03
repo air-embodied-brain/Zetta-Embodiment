@@ -471,7 +471,7 @@ def test_observation_images_match_the_pre_migration_jpeg_quantization(
     raw_frame = np.zeros((4, 4, 3), dtype=np.uint8)
     expected = session_core.jpeg_lossy_rgb_frame(raw_frame)
 
-    decoded_main = payload_module.decode_image(observation.main_image)
+    decoded_main = payload_module.decode_payload(observation.main_image)
     np.testing.assert_array_equal(decoded_main, expected)
     # The raw simulator frame for this camera is exactly zero; if the adapter
     # had skipped quantization, decoded_main would equal raw_frame byte-for-byte

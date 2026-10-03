@@ -59,7 +59,7 @@ test = [
     "omegaconf>=2.3,<3",
     "imageio-ffmpeg>=0.5,<1",
     "scipy>=1.10,<2",
-    "zetta[runtime]",
+    "zetta[runtime,jpeg]",
     "zetta[geniesim-vla]",
 ]
 runtime = [
@@ -67,6 +67,9 @@ runtime = [
     "gymnasium>=1.1,<2",
     "prometheus-client>=0.20,<1",
     "torch>=2.4,<3",
+]
+jpeg = [
+    "torchvision>=0.19,<1",
 ]
 ray = [
     "ray",
@@ -99,7 +102,7 @@ libero = []
 libero-pro = []
 libero-plus = []
 full = [
-    "zetta[runtime,ray,openpi,libero-pro,sam3,cosmos-lite]",
+    "zetta[runtime,ray,openpi,jpeg,libero-pro,sam3,cosmos-lite]",
 ]
 sam3 = [
     "sam3==0.1.4",

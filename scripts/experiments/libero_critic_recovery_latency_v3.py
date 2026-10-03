@@ -382,9 +382,10 @@ def _collect_frames(
     ``per_step`` 为 ``None``，本函数直接跳过（不追加任何帧，不报错——与 main 侧
     ``--no-video`` 语义一致，只是本脚本目前总是打开）。
 
-    图像以 ``PayloadRef``（inline PNG）形式挂在 ``Observation.main_image`` /
-    ``wrist_image`` 上，用 ``payload.decode_image`` 解成 ``[H, W, C]`` uint8 数组，
-    与 main 侧 ``imageio.mimwrite`` 期望的输入形状一致。
+    图像以 ``PayloadRef``（inline PNG 或 JPEG）形式挂在
+    ``Observation.main_image`` / ``wrist_image`` 上，用
+    ``payload.decode_payload`` 解成 ``[H, W, C]`` uint8 数组，与 main 侧
+    ``imageio.mimwrite`` 期望的输入形状一致。
 
     Args:
         step_result: ``StepResult``（已 ``unwrap`` 过的成功结果）。
@@ -401,9 +402,9 @@ def _collect_frames(
         if obs is None:
             continue
         if obs.main_image is not None:
-            main_frames.append(payload_module.decode_image(obs.main_image))
+            main_frames.append(payload_module.decode_payload(obs.main_image))
         if obs.wrist_image is not None:
-            wrist_frames.append(payload_module.decode_image(obs.wrist_image))
+            wrist_frames.append(payload_module.decode_payload(obs.wrist_image))
 
 
 def _save_episode_video(

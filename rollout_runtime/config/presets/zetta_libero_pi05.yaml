@@ -175,4 +175,3 @@ payload:
   # 同机 served（回环 TCP / Ray channel）仍应优先 raw：内存带宽比 CPU 压缩便宜。
   # 代价：raw 的单个 payload 更大，更容易越过上面的 256 KiB inline 阈值而走 oversize
   # 路径；同机内不产生真实传输，这个计数只是记账。
-  image_codec: raw

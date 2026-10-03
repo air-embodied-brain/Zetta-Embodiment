@@ -264,7 +264,11 @@ else
 fi
 
 log "4/9 Install this repository in editable mode (including the Zetta Ray runtime)"
-"$PY" -m pip install -e "${REPO_ROOT}[ray]"
+REPO_EXTRAS="ray"
+if [ "$TRACK" = "libero-pro" ]; then
+  REPO_EXTRAS="ray,jpeg"
+fi
+"$PY" -m pip install -e "${REPO_ROOT}[${REPO_EXTRAS}]"
 
 if [ "$TRACK" = "libero-pro" ]; then
   log "5/9 [libero-pro] Install rlinf-openpi (real openpi/pi0.5 inference; include all dependencies and do not use --no-deps)"

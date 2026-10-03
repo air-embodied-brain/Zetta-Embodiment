@@ -6,6 +6,8 @@ Assertion focus: inline/ref threshold, 8 MiB ceiling, image encode/decode.
 
 from __future__ import annotations
 
+import os
+
 import numpy as np
 import pytest
 
@@ -81,6 +83,144 @@ def test_png_accepts_2d_and_normalizes_to_hwc() -> None:
     ref = payload_module.encode_image(grey)
     assert ref.shape == (*grey.shape, 1)
     assert np.array_equal(payload_module.decode_payload(ref)[:, :, 0], grey)
+
+
+# ------------------------------------------------------------------ JPEG codec
+
+
+def test_jpeg_capability_probes_never_raise() -> None:
+    """Optional JPEG capability probes are safe on CPU-only hosts."""
+    jpeg_ready = payload_module.jpeg_available()
+    assert isinstance(jpeg_ready, bool)
+    if os.environ.get("CI"):
+        assert jpeg_ready, "CPU JPEG backend must be installed in CI"
+    assert isinstance(payload_module.nvjpeg_available(), bool)
+
+
+def _skip_without_jpeg() -> None:
+    if not payload_module.jpeg_available():
+        if os.environ.get("CI"):
+            pytest.fail("torch+torchvision JPEG backend is required in CI")
+        pytest.skip("torch+torchvision are required for the jpeg codec")
+
+
+def test_jpeg_round_trip_is_lossy_but_close() -> None:
+    """JPEG is lossy: decoded pixels should be close to, but not necessarily
+    exactly equal to, the source."""
+    _skip_without_jpeg()
+    yy, xx = np.indices((64, 64))
+    image = np.stack(
+        [(xx * 3) % 256, (yy * 3) % 256, ((xx + yy) * 2) % 256], axis=-1
+    ).astype(np.uint8)
+    ref = payload_module.encode_image_jpeg(image, quality=90)
+    assert isinstance(ref, InlineBytes)
+    assert ref.codec is PayloadCodec.JPEG
+    assert ref.shape == image.shape
+    assert ref.dtype == "uint8"
+    decoded = payload_module.decode_payload(ref)
+    assert decoded.shape == image.shape
+    assert decoded.dtype == np.uint8
+    # A smooth camera-like frame should remain close at quality=90 across the
+    # CPU libjpeg and CUDA nvJPEG backends.
+    assert float(np.abs(decoded.astype(np.int16) - image.astype(np.int16)).mean()) < 10
+
+
+def test_jpeg_grayscale_round_trip() -> None:
+    """Single-channel input must round-trip through the grayscale JPEG path."""
+    _skip_without_jpeg()
+    grey = _image(height=32, width=32, channels=1)
+    ref = payload_module.encode_image_jpeg(grey)
+    decoded = payload_module.decode_payload(ref)
+    assert decoded.shape == grey.shape
+
+
+@pytest.mark.parametrize("quality", [1, 100])
+def test_jpeg_accepts_quality_boundaries(quality: int) -> None:
+    """The documented inclusive quality range reaches the backend."""
+    _skip_without_jpeg()
+    ref = payload_module.encode_image_jpeg(_image(), quality=quality)
+    assert payload_module.decode_payload(ref).shape == (12, 9, 3)
+
+
+def test_jpeg_accepts_non_contiguous_input() -> None:
+    """The encoder materializes strided camera views before conversion."""
+    _skip_without_jpeg()
+    image = _image(height=20, width=18)[:, ::2, :]
+    assert not image.flags["C_CONTIGUOUS"]
+    ref = payload_module.encode_image_jpeg(image)
+    assert payload_module.decode_payload(ref).shape == image.shape
+
+
+def test_jpeg_rejects_non_uint8() -> None:
+    """JPEG only accepts uint8, same contract as PNG."""
+    with pytest.raises(RuntimeApiError) as excinfo:
+        payload_module.encode_image_jpeg(np.zeros((4, 4, 3), dtype=np.float32))
+    assert excinfo.value.info.code is ErrorCode.INVALID_ARGUMENT
+
+
+def test_jpeg_rejects_unsupported_channel_count() -> None:
+    """JPEG has no alpha channel; 4-channel input must be rejected rather than
+    silently dropping a channel."""
+    with pytest.raises(RuntimeApiError) as excinfo:
+        payload_module.encode_image_jpeg(np.zeros((4, 4, 4), dtype=np.uint8))
+    assert excinfo.value.info.code is ErrorCode.INVALID_ARGUMENT
+
+
+def test_jpeg_rejects_empty_images() -> None:
+    """Empty dimensions are invalid before reaching the optional backend."""
+    with pytest.raises(RuntimeApiError) as excinfo:
+        payload_module.encode_image_jpeg(np.zeros((0, 4, 3), dtype=np.uint8))
+    assert excinfo.value.info.code is ErrorCode.INVALID_ARGUMENT
+
+
+@pytest.mark.parametrize("quality", [0, 101, True, 90.0, "90"])
+def test_jpeg_rejects_invalid_quality(quality: object) -> None:
+    """Quality validation must be deterministic and dependency-free."""
+    with pytest.raises(RuntimeApiError) as excinfo:
+        payload_module.encode_image_jpeg(_image(), quality=quality)  # type: ignore[arg-type]
+    assert excinfo.value.info.code is ErrorCode.INVALID_ARGUMENT
+
+
+def test_jpeg_decode_rejects_bad_bytes() -> None:
+    """A malformed JPEG is an invalid payload, not a leaked backend error."""
+    _skip_without_jpeg()
+    ref = InlineBytes(
+        codec=PayloadCodec.JPEG,
+        shape=(4, 4, 3),
+        dtype="uint8",
+        data=b"not-a-jpeg",
+    )
+    with pytest.raises(RuntimeApiError) as excinfo:
+        payload_module.decode_image_jpeg(ref)
+    assert excinfo.value.info.code is ErrorCode.INVALID_ARGUMENT
+
+
+def test_jpeg_decode_rejects_invalid_declared_shape() -> None:
+    """Invalid shape metadata is rejected without importing the backend."""
+    ref = InlineBytes(
+        codec=PayloadCodec.JPEG,
+        shape=(4, 4, 4),
+        dtype="uint8",
+        data=b"not-a-jpeg",
+    )
+    with pytest.raises(RuntimeApiError) as excinfo:
+        payload_module.decode_image_jpeg(ref)
+    assert excinfo.value.info.code is ErrorCode.INVALID_ARGUMENT
+
+
+def test_decode_image_jpeg_rejects_wrong_codec() -> None:
+    """Feeding a PNG ref into the jpeg decoder must fail closed."""
+    png_ref = payload_module.encode_image(_image())
+    with pytest.raises(RuntimeApiError) as excinfo:
+        payload_module.decode_image_jpeg(png_ref)
+    assert excinfo.value.info.code is ErrorCode.INVALID_ARGUMENT
+
+
+def test_encode_payload_never_picks_jpeg() -> None:
+    """The automatic codec chooser stays PNG-only; JPEG is opt-in only."""
+    image = _image()
+    ref = payload_module.encode_payload(image)
+    assert ref.codec is PayloadCodec.PNG
 
 
 def test_png_rejects_non_uint8() -> None:

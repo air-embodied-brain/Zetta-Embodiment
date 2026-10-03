@@ -33,6 +33,7 @@ from rollout_runtime.api.enums import ErrorCode
 from rollout_runtime.api.errors import RuntimeApiError
 from rollout_runtime.api.ids import EpisodeId, SessionId
 from rollout_runtime.api.messages import EnvSpecMsg, Observation, ResetSpec
+from rollout_runtime.api.payload_ref import InlineBytes, PayloadCodec
 from rollout_runtime.core import payload as payload_module
 from rollout_runtime.core.env_execution import (
     LOCKSTEP_VECTOR_FORM,
@@ -813,6 +814,55 @@ def test_env_config_aliases_and_unknown_keys() -> None:
         LiberoEnvConfig.from_mapping({"image_hieght": 256})
     assert excinfo.value.info.code is ErrorCode.INVALID_ARGUMENT
     assert excinfo.value.info.detail["unknown_keys"] == ["image_hieght"]
+
+
+def test_libero_image_codec_config_validates_quality() -> None:
+    """JPEG selection belongs to Libero's family config and validates early."""
+    from rollout_runtime.backends.rlinf_env import LiberoEnvConfig
+
+    assert LiberoEnvConfig.from_mapping({}).image_codec == "png"
+    assert (
+        LiberoEnvConfig.from_mapping(
+            {"image_codec": "jpeg", "jpeg_quality": 73}
+        ).jpeg_quality
+        == 73
+    )
+    for value in (0, 101, "90", True):
+        with pytest.raises(RuntimeApiError) as excinfo:
+            LiberoEnvConfig.from_mapping(
+                {"image_codec": "jpeg", "jpeg_quality": value}
+            )
+        assert excinfo.value.info.code is ErrorCode.INVALID_ARGUMENT
+    with pytest.raises(RuntimeApiError) as excinfo:
+        LiberoEnvConfig.from_mapping({"image_codec": "webp"})
+    assert excinfo.value.info.code is ErrorCode.INVALID_ARGUMENT
+
+
+def test_libero_image_codec_config_reaches_observation_encoder(
+    monkeypatch: pytest.MonkeyPatch,
+    stub_rlinf: type[_StubLiberoEnv],
+) -> None:
+    """The family config must select the codec used by reset observations."""
+    calls: list[int] = []
+
+    def fake_jpeg(frame: np.ndarray, *, quality: int) -> InlineBytes:
+        calls.append(quality)
+        return InlineBytes(
+            codec=PayloadCodec.JPEG,
+            shape=tuple(int(dim) for dim in frame.shape),
+            dtype="uint8",
+            data=b"jpeg-stub",
+        )
+
+    monkeypatch.setattr(payload_module, "encode_image_jpeg", fake_jpeg)
+    core = _build_core({"image_codec": "jpeg", "jpeg_quality": 73})
+    try:
+        observation = core.reset([0], ResetSpec(task_id=0, seed=0))[0]
+        assert observation.main_image is not None
+        assert observation.main_image.codec is PayloadCodec.JPEG
+        assert calls == [73, 73]
+    finally:
+        core.close()
 
 
 def test_num_steps_wait_must_match_the_hardcoded_warmup() -> None:

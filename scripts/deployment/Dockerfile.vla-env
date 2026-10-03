@@ -296,7 +296,8 @@ RUN pip install ray "omegaconf>=2.3,<3"
 # 6. Track-specific VLA backend dependencies.
 # ---------------------------------------------------------------------------
 RUN if [ "$TRACK" = "libero-pro" ]; then \
-        pip install "rlinf-openpi==${RLINF_OPENPI_VERSION}"; \
+        pip install "rlinf-openpi==${RLINF_OPENPI_VERSION}" && \
+        pip install "torchvision>=0.19,<1"; \
     fi
 
 # Only the OpenPI distribution and its required transformer fork are allowed

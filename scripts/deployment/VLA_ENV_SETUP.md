@@ -98,6 +98,43 @@ scenes/libero_tabletop_base_style.xml
 The installer builds this layout by copying robosuite's model assets first and
 then overlaying LIBERO-Pro's scenes and objects.
 
+### Optional JPEG image encoding
+
+PNG remains the default and preserves the legacy lossless behavior. JPEG is an
+explicit, lossy experiment configured in the LIBERO family section, not in the
+generic `payload` section:
+
+~~~yaml
+env_config:
+  image_codec: jpeg
+  jpeg_quality: 90
+~~~
+
+The ready-to-load single-4090 examples are
+[`libero_pi05_4090.yaml`](../../rollout_runtime/config/presets/libero_pi05_4090.yaml)
+(PNG) and
+[`libero_pi05_4090_jpeg.yaml`](../../rollout_runtime/config/presets/libero_pi05_4090_jpeg.yaml)
+(JPEG). The JPEG preset is experimental for real Pi0.5 rollouts because the
+performance report records non-finite-action failures with that checkpoint.
+Do not use nonexistent `--codec` or `--model-path` command-line options;
+`model_path` is a field inside the preset's policy configuration.
+
+The JPEG extra installs the `torchvision` distribution used by the runtime.
+After installation, verify the distribution and both codec entry points:
+
+~~~bash
+"$VENV_ROOT/bin/python" -c "
+import torch, torchvision
+from torchvision.io import encode_jpeg, decode_jpeg
+print(torch.__version__, torchvision.__version__)
+print(encode_jpeg, decode_jpeg)
+"
+~~~
+
+The installer enables this extra for the LIBERO-Pro track. PNG and raw payload
+paths do not require `torchvision`; calling the JPEG API without the extra
+returns a runtime error instead of silently switching codecs.
+
 ### RoboCasa + GR00T
 
 Prepare a source root containing these exact checkouts:
