@@ -1,0 +1,105 @@
+# BEHAVIOR / OmniGibson + Pi0.5 wiring preset.
+# Replace every /path/to value with an environment-local checkout or checkpoint.
+
+env_family: behavior
+env_config:
+  activity_name: put_bowl_on_table
+  scene_model: Rs_int
+  robot_type: R1Pro
+  obs_modalities: [rgb, proprio]
+  image_size: 224
+  main_camera: eyes
+  wrist_cameras: [left_wrist, right_wrist]
+  state_source: proprio
+  state_dim: null
+  action_normalize: true
+  max_episode_steps: 500
+  action_dim: 23
+  chunk_size: 16
+  action_model_type: behavior
+  return_all_frames: false
+  save_video: false
+  env_factory: omnigibson:Environment
+  omnigibson_config:
+    assets_root: /path/to/behavior-assets
+  core_form: per_slot
+
+cluster:
+  num_nodes: 1
+  component_placement:
+    env:
+      placement: "0"
+    rollout:
+      placement: "0"
+
+gateway:
+  gateway_epoch: 1
+  maintenance_interval_seconds: 1.0
+  default_lease_seconds: 1800.0
+  error_retention_seconds: 300.0
+  result_ttl_seconds: 300.0
+  heartbeat_timeout_seconds: 60.0
+  heartbeat_interval_seconds: 10.0
+  max_concurrency_per_rank: 4
+  metrics_namespace: rr
+
+transport:
+  kind: ray_channel
+  command_queue_size: 64
+  control_queue_size: 16
+  result_queue_size: 64
+  infer_request_queue_size: 16
+  infer_response_queue_size: 16
+  command_timeout_seconds: 600.0
+
+env_worker:
+  group_name: env
+  num_ranks: 1
+  placement_strategy: packed
+  max_sessions_per_rank: 1
+  default_pool_size: 1
+  seed_offset: 0
+  coalesce_slot_groups: false
+
+rollout_worker:
+  group_name: rollout
+  num_ranks: 1
+  placement_strategy: packed
+  tensor_parallel_size: 1
+  pipeline_parallel_size: 1
+  policy_id: pi05_behavior
+  policy_family: openpi
+  policy_backend: zetta_openpi
+  device: cuda
+  dtype: bfloat16
+  max_concurrent_inferences: 1
+  policy_config:
+    config_name: pi05_behavior
+    model_path: /path/to/pi05_behavior_checkpoint
+    num_action_chunks: 32
+    action_dim: 23
+    num_steps: 5
+    use_proprio: true
+    model_type: pi05
+    family_params:
+      num_images_in_input: 3
+      stack_wrist_views: true
+  scheduler:
+    max_batch_size: 1
+    max_wait_ms: 20.0
+    max_queue_depth: 16
+    max_inflight_per_application: 4
+    max_inflight_per_session: 1
+    fixed_batch_size: null
+
+admission:
+  require_auth: false
+  tokens: {}
+  max_sessions_per_application: 2
+  max_inflight_operations_per_application: 8
+  max_inflight_operations_per_session: 2
+  max_total_inflight_operations: 8
+
+payload:
+  inline_threshold_bytes: 262144
+  request_limit_bytes: 8388608

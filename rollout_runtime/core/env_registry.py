@@ -38,6 +38,7 @@ from rollout_runtime.core.env_execution import (
 
 __all__ = [
     "ENV_FAMILY_BEHAVIORS",
+    "BEHAVIOR_ENV_FAMILY",
     "ENV_FAMILY_REGISTRY",
     "GENIESIM_ENV_FAMILY",
     "LIBERO_ENV_FAMILY",
@@ -57,6 +58,9 @@ __all__ = [
 ]
 
 GENIESIM_ENV_FAMILY = "geniesim"
+
+BEHAVIOR_ENV_FAMILY = "behavior"
+"""The BEHAVIOR-1K / OmniGibson family name (single R1Pro lane)."""
 
 LIBERO_ENV_FAMILY = "libero"
 """The libero family name (the only real family shipped initially)."""
@@ -189,6 +193,20 @@ ENV_FAMILY_BEHAVIORS: dict[str, EnvFamilyBehavior] = {
         # lanes inside a single sapien scene.
         core_forms=frozenset({PER_SLOT_FORM, LOCKSTEP_VECTOR_FORM}),
         obs_extraction="ManiskillEnv._wrap_obs -> EnvOutput.prepare_observations",
+    ),
+    BEHAVIOR_ENV_FAMILY: EnvFamilyBehavior(
+        env_family=BEHAVIOR_ENV_FAMILY,
+        env_type=BEHAVIOR_ENV_FAMILY,
+        reset_signature="seed_options",
+        chunk_obs_layout="per_step",
+        action_layout="numpy_env_chunk_dim",
+        # OmniGibson renders the R1Pro camera views through a GPU-capable
+        # backend, but the Runtime still owns one independent simulator per
+        # slot rather than a batched tensor scene.
+        device_kind="cpu_subproc",
+        needs_accelerator_override=True,
+        core_forms=frozenset({PER_SLOT_FORM}),
+        obs_extraction="BehaviorEnv RGB/proprio -> Observation",
     ),
     ROBOCASA_ENV_FAMILY: EnvFamilyBehavior(
         env_family=ROBOCASA_ENV_FAMILY,
