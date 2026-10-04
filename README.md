@@ -21,7 +21,7 @@ Zetta is an efficient closed-loop embodied harness for self-evolving physical in
 - [√] **September 3, 2026:** Add RoboTwin environment support.
 - [√] **September 10, 2026:** Add Genie Sim environment support.
 - [√] **September 17, 2026:** Add ManiSkill environment support (native Panda/PickCube; model validation pending).
-- [ ] **September 20, 2026:** Add BEHAVIOR environment support.
+- [√] **September 20, 2026:** Add BEHAVIOR environment support (OmniGibson / BEHAVIOR-1K runtime contract).
 - [ ] **Ongoing:** Expand model and environment coverage at an approximate cadence of one integration per week.
 
 ## Evolution Protocol
@@ -51,8 +51,8 @@ Runtime role boundaries:
 | Path | Purpose |
 |---|---|
 | `zetta/evolution/` | Immutable manifests, queues, clustering, stages, gates, promotion, and supervision |
-| `rollout_runtime/` | The Rollout Runtime: Gateway, EnvWorker/RolloutWorker groups, and backends for LIBERO/RoboCasa/ManiSkill/RoboTwin/Genie Sim |
-| `robots/libero/`, `robots/robocasa/`, `robots/robotwin/` | Env clients, Role1/Critic/Recovery, tools, and rendering contracts |
+| `rollout_runtime/` | The Rollout Runtime: Gateway, EnvWorker/RolloutWorker groups, and backends for LIBERO/RoboCasa/ManiSkill/BEHAVIOR/RoboTwin/Genie Sim |
+| `robots/libero/`, `robots/robocasa/`, `robots/behavior/`, `robots/robotwin/` | Env clients, Role1/Critic/Recovery, tools, and rendering contracts |
 | `scripts/evolution/` | Campaign preparation, workers, capacity probes, and plots |
 | `scripts/deployment/` | Service start/stop, VLA env install, and Docker build helpers |
 | `tests/` | Unit/contract tests; the minimal set requires no simulator or model |
@@ -107,6 +107,26 @@ contracts, official scoring, reproducible resets and a single-GPU Ray smoke pres
 See [ManiSkill deployment and contracts](docs/maniskill.md) for installation,
 validation and frozen rollout/campaign configuration. Real VLA and campaign
 validation requires a matching native PickCube checkpoint and normalization stats.
+
+### BEHAVIOR environment
+
+The `behavior` Runtime backend drives a single R1Pro agent in an OmniGibson
+`BehaviorTask`. It exposes the BEHAVIOR policy contract (224px RGB, two wrist
+views, full R1Pro proprioception, and 23-dimensional actions) and keeps
+OmniGibson/BDDL optional so the simulator-free test environment remains usable.
+Install the repository's lightweight extra first:
+
+```bash
+python -m pip install -e ".[behavior]"
+```
+
+Then install the matching OmniGibson and BDDL checkouts from their upstream
+repositories and download the BEHAVIOR assets separately. Set
+`env_config.activity_name`, `scene_model`, and `env_config.env_factory` in
+`rollout_runtime/config/presets/behavior_pi05.yaml` for the selected checkout.
+Use `scripts/deployment/smoke_behavior.py` to verify import, reset, one step,
+and close before starting a VLA rollout. Model weights and simulator assets are
+external artifacts and are not included in this repository.
 
 ### VLA runtime environment (LIBERO-Pro or RoboCasa)
 

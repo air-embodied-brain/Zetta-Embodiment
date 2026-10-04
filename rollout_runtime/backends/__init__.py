@@ -2,7 +2,8 @@
 """Env and policy backends, plus the sole resolution point for "select a backend by config."
 
 ``fake`` is pure stdlib + numpy; ``rlinf_env`` / ``rlinf_policy`` and
-``rlinf_maniskill`` allow rlinf + torch, and must be imported lazily. All
+``rlinf_maniskill`` allow rlinf + torch, and must be imported lazily. The
+``behavior`` adapter also keeps OmniGibson lazy. All
 adaptation to rlinf is written here -- **``third_party/rlinf/`` submodules are
 never modified**. ``robocasa_current`` / ``groot_policy`` do not touch rlinf
 at all; they depend only on the current branch's
@@ -40,7 +41,15 @@ __all__ = [
     "register_env_family_for",
 ]
 
-ENV_BACKENDS = ("fake", "libero", "maniskill", "robocasa", "robotwin", "geniesim")
+ENV_BACKENDS = (
+    "fake",
+    "libero",
+    "maniskill",
+    "behavior",
+    "robocasa",
+    "robotwin",
+    "geniesim",
+)
 """Env families that actually have an adapter in this build.
 
 Every family declared in ``ENV_FAMILY_BEHAVIORS`` now ships an adapter. The
@@ -89,6 +98,10 @@ def register_env_family_for(env_family: str) -> Any:
         )
 
         return register_maniskill_env_family(replace=True)
+    if env_family == "behavior":
+        from rollout_runtime.backends.behavior import register_behavior_env_family
+
+        return register_behavior_env_family(replace=True)
     if env_family == "robocasa":
         from rollout_runtime.backends.robocasa_current import (
             register_robocasa_current_env_family,

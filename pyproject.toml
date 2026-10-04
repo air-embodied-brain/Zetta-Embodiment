@@ -86,6 +86,10 @@ maniskill = [
     "omegaconf>=2.3,<3",
     "imageio-ffmpeg>=0.5,<1",
 ]
+behavior = [
+    "zetta[runtime]",
+    "pillow>=10",
+]
 cosmos-lite = [
     "websockets>=11,<17",
 ]

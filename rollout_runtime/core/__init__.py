@@ -14,6 +14,7 @@ from rollout_runtime.core.env_execution import (
     normalize_chunk_outcome,
 )
 from rollout_runtime.core.env_registry import (
+    BEHAVIOR_ENV_FAMILY,
     ENV_FAMILY_BEHAVIORS,
     ENV_FAMILY_REGISTRY,
     EnvFamilyAdapter,
@@ -51,6 +52,7 @@ from rollout_runtime.core.policy_inference import (
 
 __all__ = [
     "BATCHABLE_PARAM_KEYS",
+    "BEHAVIOR_ENV_FAMILY",
     "ENV_FAMILY_BEHAVIORS",
     "ENV_FAMILY_REGISTRY",
     "ENV_OUTPUT_KEYS",
