@@ -22,6 +22,7 @@ Zetta is an efficient closed-loop embodied harness for self-evolving physical in
 - [√] **September 10, 2026:** Add Genie Sim environment support.
 - [√] **September 17, 2026:** Add ManiSkill environment support (native Panda/PickCube; model validation pending).
 - [√] **September 20, 2026:** Add BEHAVIOR environment support (OmniGibson / BEHAVIOR-1K runtime contract).
+- [√] **September 24, 2026:** Add FlashRT (FP8 + CUDA Graph) Pi0.5 policy backend; see [FlashRT integration](#flashrt-integration).
 - [ ] **Ongoing:** Expand model and environment coverage at an approximate cadence of one integration per week.
 
 ## Evolution Protocol
@@ -291,9 +292,18 @@ Optional-backend tests require the corresponding dependencies; hardware/service 
 - Use privileged simulator state only through an explicitly authorized and auditable diagnostic feature contract; it must not become hidden task control.
 - Treat held-out results as test-only unless `heldout_mode=validation` is preregistered before any episode runs.
 
+## FlashRT Integration
+
+The `flashrt` policy backend (`rollout_runtime/backends/flashrt_policy.py`) serves Pi0.5 with FlashRT's FP8 + CUDA Graph kernels, including a batched `infer_batch` path.
+
+1. **Install FlashRT** (no PyPI wheel; build locally with a CUDA toolchain, see [FlashRT](https://github.com/flashrt-project/FlashRT#build--install)), then `pip install -e ".[flashrt]"` for the torch glue.
+2. **Prepare the checkpoint:** `bash scripts/deployment/prepare_flashrt_ckpt.sh <openpi_ckpt_dir> <dst_dir>` lays out an openpi/RLinf Pi0.5 checkpoint the way FlashRT expects.
+3. **Generate the calibration `.npz`** (a real LIBERO frame for FP8 calibration): start the gateway with a LIBERO preset, then run `python scripts/experiments/capture_flashrt_calibration_frame.py --url http://localhost:8711 --token <token> --out /path/to/out/flashrt_calibration.npz`.
+4. **Run:** set `checkpoint` and `calibration_data_path` in `rollout_runtime/config/presets/libero_pi05_flashrt_4090.yaml` and launch the gateway with it (`policy_backend: flashrt`).
+
 ## Acknowledgements
 
-We acknowledge [RLinf](https://github.com/RLinf/RLinf)  for its prior work. See [Third-Party Notices](./THIRD_PARTY_NOTICES.md) for details.
+We acknowledge [RLinf](https://github.com/RLinf/RLinf) and [FlashRT](https://github.com/flashrt-project/FlashRT) for their prior work. See [Third-Party Notices](./THIRD_PARTY_NOTICES.md) for details.
 
 ## Citation
 

@@ -1,0 +1,94 @@
+# LIBERO-Pro + FlashRT pi0.5 (FP8 + CUDA Graph), single-4090 gateway preset.
+#
+# Mirrors the FlashRT arm of the Z-Infra FlashRT report
+# (chunk_size 10). Run inside the FlashRT-enabled LIBERO env. Override the checkpoint
+# / calibration paths at the CLI or edit the two paths below.
+
+env_family: libero
+env_config:
+  task_suite_name: libero_10
+  task_id: 0
+  max_episode_steps: 310
+  camera_height: 256
+  camera_width: 256
+  camera_depths: true
+  num_steps_wait: 15
+  action_dim: 7
+  chunk_size: 10
+  action_model_type: openpi
+  return_all_frames: false
+  libero_variant: pro
+  gpu_memory_reserve_mib: 800
+
+cluster:
+  num_nodes: 1
+  component_placement: {}
+
+gateway:
+  gateway_epoch: 1
+  maintenance_interval_seconds: 1.0
+  default_lease_seconds: 1800.0
+  error_retention_seconds: 300.0
+  result_ttl_seconds: 300.0
+  heartbeat_timeout_seconds: 60.0
+  max_concurrency_per_rank: 32
+  metrics_namespace: rr
+
+transport:
+  kind: inproc
+  command_queue_size: 256
+  control_queue_size: 32
+  result_queue_size: 512
+  infer_request_queue_size: 256
+  infer_response_queue_size: 256
+  command_timeout_seconds: 600.0
+
+env_worker:
+  group_name: env
+  num_ranks: 1
+  placement_strategy: node
+  max_sessions_per_rank: 32
+  default_pool_size: 1
+  seed_offset: 0
+
+rollout_worker:
+  group_name: rollout
+  num_ranks: 1
+  placement_strategy: node
+  tensor_parallel_size: 1
+  pipeline_parallel_size: 1
+  policy_id: pi05
+  policy_family: flashrt
+  policy_backend: flashrt
+  device: cuda
+  dtype: bfloat16
+  max_concurrent_inferences: 32
+  policy_config:
+    checkpoint: /path/to/checkpoints/RLinf-Pi05-LIBERO-SFT-flashrt
+    config: pi05
+    framework: torch
+    autotune: 0
+    action_dim: 7
+    model_version: pi05-libero-flashrt
+    enable_batched_infer: true
+    calibration_data_path: /path/to/out/flashrt_calibration.npz
+  scheduler:
+    max_batch_size: 4
+    max_wait_ms: 20.0
+    max_queue_depth: 64
+    max_inflight_per_application: 32
+    max_inflight_per_session: 1
+    fixed_batch_size: null
+
+admission:
+  require_auth: false
+  tokens: {}
+  max_sessions_per_application: 32
+  max_inflight_operations_per_application: 64
+  max_inflight_operations_per_session: 2
+  max_total_inflight_operations: 128
+
+payload:
+  inline_threshold_bytes: 262144
+  request_limit_bytes: 8388608
+  image_codec: png

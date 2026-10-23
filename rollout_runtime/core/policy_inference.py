@@ -72,6 +72,9 @@ BATCHABLE_PARAM_KEYS: dict[str, frozenset[str]] = {
     # are fixed by its deployment YAML and checked by the backend.
     "cosmos_lite": frozenset(),
     "fake": frozenset(),
+    # FlashRT bakes model config and checkpoint into the CUDA Graph captured
+    # at load() time, so only the noise seed is mixable (same as pi0/pi05).
+    "flashrt": frozenset({"noise_seed"}),
 }
 """Per-policy-family declarations of "mixable" parameter keys: requests
 differing only in these keys may still enter the same batch.
