@@ -15,8 +15,9 @@ The package migration covers the corresponding files in these paths:
 
 The migration covers 70 former `rpent/` package files and related references
 throughout the repository. RPent-derived portions remain attributed to the
-original RPent contributors. Because the imported snapshot contains no
-explicit RPent license text, this notice records provenance only.
+original RPent contributors. The upstream
+[RPent repository](https://github.com/RLinf/RPent) is distributed under the
+Apache-2.0 license.
 
 ## RLinf-derived embodied runtime code
 
