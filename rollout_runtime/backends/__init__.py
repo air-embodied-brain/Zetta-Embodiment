@@ -63,7 +63,14 @@ the family is registered unconditionally and a missing package surfaces as an
 ``ENV_FAILURE`` from ``build`` rather than as a missing family.
 """
 
-POLICY_BACKENDS = ("fake", "zetta_openpi", "groot", "cosmos_lite", "geniesim_vla")
+POLICY_BACKENDS = (
+    "fake",
+    "zetta_openpi",
+    "groot",
+    "cosmos_lite",
+    "geniesim_vla",
+    "flashrt",
+)
 """Optional policy backends, including remote Cosmos-Lite serving."""
 
 
@@ -213,6 +220,20 @@ def build_policy_core(
         if model_version:
             merged.setdefault("model_version", model_version)
         return GenieSimPolicyCore(GenieSimPolicyConfig.from_mapping(merged))
+    if backend == "flashrt":
+        from rollout_runtime.backends.flashrt_policy import (
+            FlashRtPolicyConfig,
+            FlashRtPolicyCore,
+        )
+
+        merged = dict(policy_config or {})
+        merged.setdefault("device", device)
+        merged.setdefault("action_dim", action_dim)
+        if dtype:
+            merged.setdefault("dtype", dtype)
+        if model_version:
+            merged.setdefault("model_version", model_version)
+        return FlashRtPolicyCore(FlashRtPolicyConfig.from_mapping(merged))
     if backend == "cosmos_lite":
         from rollout_runtime.backends.cosmos_lite import (
             CosmosLitePolicyConfig,
