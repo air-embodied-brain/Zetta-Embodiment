@@ -17,6 +17,7 @@ Zetta is an efficient closed-loop embodied harness for self-evolving physical in
 
 ## What's New
 
+- [2026/10/25] 🔥 Zetta adds a FlashRT policy backend for Pi0.5 (FP8 + CUDA Graph): 9.9× lower single-sample latency model-only and 4.5× through the gateway on a single RTX 4090. Docs: [FlashRT integration](#flashrt-integration), [FlashRT performance report (中文)](docs/flashrt-report/flashrt-vs-zetta-openpi.md).
 - [2026/10/04] 🔥 Zetta supports the BEHAVIOR environment (OmniGibson / BEHAVIOR-1K runtime contract). Doc: [BEHAVIOR / OmniGibson](docs/behavior.md).
 - [2026/10/03] 🔥 Zetta adds an opt-in nvJPEG-backed JPEG codec for camera observations: 27× faster image encoding and 2.2× higher env-side throughput on LIBERO-Pro in isolated benchmarks. Report: [nvJPEG optimization report (中文)](docs/img-encode-report/nvjpeg-optimization-report.md).
 - [2026/09/16] 🔥 Zetta supports the ManiSkill environment (native Panda/PickCube; model validation pending). Doc: [ManiSkill deployment and contracts](docs/maniskill.md).
