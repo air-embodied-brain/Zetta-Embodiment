@@ -90,6 +90,12 @@ behavior = [
     "zetta[runtime]",
     "pillow>=10",
 ]
+# FlashRT ships no PyPI wheel: build it locally per
+# https://github.com/flashrt-project/FlashRT#build--install; this extra only
+# carries the torch glue.
+flashrt = [
+    "torch>=2.4,<3",
+]
 cosmos-lite = [
     "websockets>=11,<17",
 ]
