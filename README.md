@@ -402,4 +402,4 @@ If you find Zetta useful in your research, please cite our paper:
 
 ## License
 
-Zetta is released under the [Apache-2.0 License](LICENSE). Portions adapted from RLinf and RPent retain their original attribution; see [Third-Party Notices](./THIRD_PARTY_NOTICES.md).
+Zetta is released under the [Apache-2.0 License](LICENSE). Portions adapted from third-party projects retain their original attribution; see [Third-Party Notices](./THIRD_PARTY_NOTICES.md).
