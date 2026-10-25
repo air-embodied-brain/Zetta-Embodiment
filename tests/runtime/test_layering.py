@@ -95,6 +95,7 @@ RUNTIME_TOOLING_FILES = frozenset(
         "scripts/deployment/smoke_maniskill.py",
         "scripts/deployment/smoke_maniskill_runtime.py",
         "scripts/deployment/visualize_robotwin_episode.py",
+        "scripts/experiments/capture_flashrt_calibration_frame.py",
         "scripts/experiments/run_ab_runtime.py",
         "scripts/experiments/run_concurrency_ab.py",
         "scripts/experiments/libero_critic_recovery_latency_v3.py",
@@ -148,6 +149,10 @@ allowlist is a tool belonging to runtime itself (in the same category as
   and records hardware evidence; it is not part of a legacy robot path.
 - ``smoke_geniesim_vla.py``: validates native VLA protocol and paired Campaign
   episodes through Runtime, as a deployment probe outside the legacy paths.
+- ``capture_flashrt_calibration_frame.py``: captures one real LIBERO frame
+  through a running Runtime gateway (``RemoteRuntimeClient``) for the optional
+  FlashRT policy backend's FP8 calibration; it is a deployment tool outside
+  the legacy robot paths.
 - ``run_concurrency_ab.py``: a **concurrent** A/B driver for legacy vs.
   rollout, where both arms share the same scripted workload definition (no
   planner). The rollout arm installs its own runtime (``launch/`` +
