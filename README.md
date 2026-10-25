@@ -1,10 +1,13 @@
-# Zetta
-
 <div align="center">
   <img src="z_trans_logo.png" alt="Z TRANS logo" width="420"/>
 </div>
 
-[![Papers with Code: SOTA on RoboCasa365 Atomic-Seen](https://paperswithcode.co/api/v1/papers/2608.16590/leaderboard-badge.svg?eval=26154&live=1)](https://paperswithcode.co/api/v1/papers/2608.16590/leaderboard-badge-link?eval=26154)
+<div align="center">
+<a href="https://arxiv.org/abs/2608.16590"><img src="https://img.shields.io/badge/arXiv-2608.16590-b31b1b?logo=arxiv" alt="arXiv"></a>
+<a href="https://paperswithcode.co/api/v1/papers/2608.16590/leaderboard-badge-link?eval=26154"><img src="https://paperswithcode.co/api/v1/papers/2608.16590/leaderboard-badge.svg?eval=26154&live=1" alt="Papers with Code: SOTA on RoboCasa365 Atomic-Seen"></a>
+<a href="https://github.com/air-embodied-brain/Zetta-Embodiment/actions/workflows/unit-tests.yml"><img src="https://img.shields.io/github/actions/workflow/status/air-embodied-brain/Zetta-Embodiment/unit-tests.yml?branch=main&label=unit%20tests" alt="Unit tests"></a>
+<img src="https://img.shields.io/badge/python-3.11%20%7C%203.12-blue?logo=python&logoColor=white" alt="Python 3.11 | 3.12">
+</div>
 
 <div align="center">
   <img src="teaser.png" alt="Zetta Overview" width="800"/>
@@ -12,19 +15,28 @@
 
 Zetta is an efficient closed-loop embodied harness for self-evolving physical intelligence. It evolves code-based runtime critics and recovery skills online while keeping the base policy frozen, achieving state-of-the-art success on LIBERO-Pro (90.8%) and RoboCasa (93.6%) with an 11.1x inference speedup.
 
-## TODO
+## What's New
 
-- [√] **August 18, 2026:** Open-source Zetta with LIBERO and Robocasa.
-- [√] **August 19, 2026:** Open-source Z-Infra with LIBERO support.
-- [√] **August 20, 2026:** Add RoboCasa support.
-- [√] **August 27, 2026:** Add NVIDIA Cosmos model support.
-- [√] **September 3, 2026:** Add RoboTwin environment support.
-- [√] **September 10, 2026:** Add Genie Sim environment support.
-- [√] **September 17, 2026:** Add ManiSkill environment support (native Panda/PickCube; model validation pending).
-- [√] **September 20, 2026:** Add BEHAVIOR environment support (OmniGibson / BEHAVIOR-1K runtime contract).
-- [ ] **Ongoing:** Expand model and environment coverage at an approximate cadence of one integration per week.
+- [2026/10/04] 🔥 Zetta supports the BEHAVIOR environment (OmniGibson / BEHAVIOR-1K runtime contract). Doc: [BEHAVIOR / OmniGibson](docs/behavior.md).
+- [2026/10/03] 🔥 Zetta adds an opt-in nvJPEG-backed JPEG codec for camera observations: 27× faster image encoding and 2.2× higher env-side throughput on LIBERO-Pro in isolated benchmarks. Report: [nvJPEG optimization report (中文)](docs/img-encode-report/nvjpeg-optimization-report.md).
+- [2026/09/16] 🔥 Zetta supports the ManiSkill environment (native Panda/PickCube; model validation pending). Doc: [ManiSkill deployment and contracts](docs/maniskill.md).
+- [2026/09/10] 🔥 Zetta supports the Genie Sim environment. Docs: [Genie Sim](docs/geniesim.md), [Genie Sim VLA and Campaign](docs/geniesim-vla.md).
+- [2026/09/03] 🔥 Zetta supports the RoboTwin environment. Doc: [RoboTwin 2.0 setup](#robotwin-20-environment).
 
-## Evolution Protocol
+<details>
+<summary><b>More updates</b></summary>
+
+- [2026/08/27] 🔥 Zetta supports NVIDIA Cosmos models. Doc: [Cosmos-Lite policy backend](docs/cosmos-lite.md).
+- [2026/08/19] 🎉 Z-Infra is open-sourced with LIBERO support.
+- [2026/08/18] 🎉 Zetta is open-sourced with LIBERO and RoboCasa.
+
+</details>
+
+🚀 **Roadmap:** we continue to expand model and environment coverage at an approximate cadence of one integration per week.
+
+## How It Works
+
+### Evolution Protocol
 
 ```text
 50 development rollouts (never use seeds 1..20)
@@ -37,7 +49,7 @@ Zetta is an efficient closed-loop embodied harness for self-evolving physical in
   -> Reject and return to Stage 2, or Promote and complete
 ```
 
-Runtime role boundaries:
+### Runtime Role Boundaries
 
 - **Cluster** groups complete failed trajectories using synchronized video, bounded telemetry, and failure segments.
 - **Stage 1 / Diagnose** explains one observable causal failure mechanism and cannot write or execute recovery actions.
@@ -46,39 +58,24 @@ Runtime role boundaries:
 - **Role1** accepts or rejects a Critic proposal and is the sole high-level decision authority during candidate execution.
 - **Recovery actor** executes only an accepted, bounded recovery program; only the environment actor may write simulator actions.
 
-## Repository Layout
+## Supported Environments and Models
 
-| Path | Purpose |
-|---|---|
-| `zetta/evolution/` | Immutable manifests, queues, clustering, stages, gates, promotion, and supervision |
-| `rollout_runtime/` | The Rollout Runtime: Gateway, EnvWorker/RolloutWorker groups, and backends for LIBERO/RoboCasa/ManiSkill/BEHAVIOR/RoboTwin/Genie Sim |
-| `robots/libero/`, `robots/robocasa/`, `robots/behavior/`, `robots/robotwin/` | Env clients, Role1/Critic/Recovery, tools, and rendering contracts |
-| `scripts/evolution/` | Campaign preparation, workers, capacity probes, and plots |
-| `scripts/deployment/` | Service start/stop, VLA env install, and Docker build helpers |
-| `tests/` | Unit/contract tests; the minimal set requires no simulator or model |
+| Environment | Policy | Runtime preset | Campaign preparation | Docs | Status |
+|---|---|---|---|---|---|
+| LIBERO-Pro | π₀.₅ | `a100_libero_pi05_pro.yaml` | `prepare_libero_campaign.py` | [VLA runtime setup](scripts/deployment/VLA_ENV_SETUP.md), [Recovery tools](docs/libero-recovery-tools.md) | ✅ |
+| RoboCasa | GR00T, π₀ | `robocasa_groot_dynamic.yaml`, `robocasa_pi0.yaml` | `prepare_robocasa_campaign.py` | [VLA runtime setup](scripts/deployment/VLA_ENV_SETUP.md) | ✅ |
+| RoboTwin 2.0 | π₀.₅ | `robotwin_pi05.yaml` | `prepare_robotwin_campaign.py` | [Installation](#robotwin-20-environment) | ✅ |
+| Genie Sim | G2 VLA service | `geniesim_vla.yaml` | `prepare_geniesim_campaign.py` | [Genie Sim VLA and Campaign](docs/geniesim-vla.md) | ✅ single task |
+| ManiSkill | — (fake-policy smoke) | `maniskill_smoke.yaml` | `prepare_maniskill_campaign.py` | [ManiSkill](docs/maniskill.md) | 🚧 model validation pending |
+| BEHAVIOR | π₀.₅ | `behavior_pi05.yaml` | — | [BEHAVIOR / OmniGibson](docs/behavior.md) | 🚧 runtime only |
 
-A campaign root normally contains:
-
-```text
-manifest.json             frozen task, schedule, runtime, and gate contract
-preregistration.json      seed and evaluation commitments
-task-contract.json        authoritative language goal, when supplied
-tool-catalog.json         exact tool schemas available to candidates
-state.json                current lifecycle phase
-episodes/                 canonical rollout and paired-gate records
-failure-clusters/         Cluster inputs, visual indices, and outputs
-diagnoses/                Stage 1 inputs, outputs, and audit trail
-proposals/                Stage 2 candidate attempts
-shadow-replay/            offline trigger and false-positive evidence
-gates/                    same-seed, regression, and held-out decisions
-promoted/                 verified candidate bundle and hashes
-```
-
-Videos, model weights, simulator assets, API credentials, and host runtime files remain outside Git.
+Runtime presets live under `rollout_runtime/config/presets/` and campaign preparation scripts under `scripts/evolution/`. [Cosmos-Lite](docs/cosmos-lite.md) is available as an additional remote policy backend (`cosmos_lite_remote.yaml`).
 
 ## Installation
 
-Python 3.10 through 3.12 is supported. The minimal test environment (no simulator/model required):
+### Minimal test environment
+
+Python 3.11 through 3.12 is supported. The minimal test environment (no simulator/model required):
 
 ```bash
 python -m venv .venv
@@ -87,53 +84,38 @@ python -m pip install --upgrade pip
 python -m pip install -e ".[test]"
 ```
 
-### Genie Sim / Isaac Sim environment
+### LLM provider
 
-The native `geniesim` Runtime backend supports the RoboColiseum
-`g2op_if_pick_block_color` task with Isaac Sim 5.1 and an isolated Python 3.11
-simulator process. Use [prepare_geniesim.py](scripts/deployment/prepare_geniesim.py)
-to prepare pinned dependencies and task assets, then run
-[smoke_geniesim.py](scripts/deployment/smoke_geniesim.py) to validate reset,
-joint control, RGB observations, official scoring, and shutdown.
-The `geniesim_vla` backend adds the G2 CoRobot WebSocket policy protocol, and
-`prepare_geniesim_campaign.py` freezes VLA rollout and candidate gate commands.
-See [Genie Sim VLA and Campaign](docs/geniesim-vla.md) for the model-service
-contract, deployment, evidence, and current single-task limits.
+Campaigns call LLM agents in two places, configured separately:
 
-### ManiSkill environment
+- **Offline campaign stages** (Cluster, Diagnose, Stage 2) always use the Codex
+  planner (`openai-codex`). Set `CODEX_API_KEY`, plus `CODEX_BASE_URL` for an
+  OpenAI-compatible gateway; `run_campaign.py --model` selects the model. To fail
+  over across several routes, set `ZETTA_API_PROVIDERS` to a JSON list of routes
+  (`name`, `model`, `base_url`, and `api_key` or `api_key_env`).
+- **Online Role1** reviews Critic proposals during candidate rollouts. The LIBERO,
+  RoboCasa and RoboTwin preparation scripts freeze its backend via
+  `--role1-planner api|codex` and `--role1-model`. The `api` planner takes a
+  provider-prefixed model id (e.g. `openai:<model>`) and reads the provider's own
+  key (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, …); on LIBERO and RoboCasa,
+  `ZETTA_ROLE1_BASE_URL` overrides its base URL. The `codex` planner uses the
+  `CODEX_*` variables above.
 
-The native Panda / `PickCube-v1` integration adds explicit observation/action
-contracts, official scoring, reproducible resets and a single-GPU Ray smoke preset.
-See [ManiSkill deployment and contracts](docs/maniskill.md) for installation,
-validation and frozen rollout/campaign configuration. Real VLA and campaign
-validation requires a matching native PickCube checkpoint and normalization stats.
-
-### BEHAVIOR environment
-
-The `behavior` Runtime backend drives a single R1Pro agent in an OmniGibson
-`BehaviorTask`. It exposes the BEHAVIOR policy contract (224px RGB, two wrist
-views, full R1Pro proprioception, and 23-dimensional actions) and keeps
-OmniGibson/BDDL optional so the simulator-free test environment remains usable.
-Install the repository's lightweight extra first:
-
-```bash
-python -m pip install -e ".[behavior]"
-```
-
-Then install the matching OmniGibson and BDDL checkouts from their upstream
-repositories and download the BEHAVIOR assets separately. Set
-`env_config.activity_name`, `scene_model`, and `env_config.env_factory` in
-`rollout_runtime/config/presets/behavior_pi05.yaml` for the selected checkout.
-Use `scripts/deployment/smoke_behavior.py` to verify import, reset, one step,
-and close before starting a VLA rollout. Model weights and simulator assets are
-external artifacts and are not included in this repository.
+Store these secrets as described in [Security and Reproducibility](#security-and-reproducibility).
 
 ### VLA runtime environment (LIBERO-Pro or RoboCasa)
 
-`scripts/deployment/install_vla_env.sh` builds a venv for one of two tracks;
-the tracks cannot share a venv state (incompatible `robosuite` versions). See
+`scripts/deployment/install_vla_env.sh` builds a venv for one of two tracks. See
 the [VLA runtime setup guide](scripts/deployment/VLA_ENV_SETUP.md) for the full
 installation notes, compatibility fixes, and known limitations.
+
+> [!WARNING]
+> The two tracks cannot share a venv state (incompatible `robosuite` versions).
+
+**Prebuilt Docker images**, built from `scripts/deployment/Dockerfile.vla-env`, are available for both tracks so you can skip the manual venv build:
+
+- **LIBERO-Pro** image: preconfigured with the LIBERO-Pro simulator stack and Pi0.5 dependencies. [Baidu Netdisk (百度网盘)](https://pan.baidu.com/s/1HW7AstjCLE_BTScRFOQT2g?pwd=qv7c)
+- **RoboCasa** image: preconfigured with the RoboCasa/robosuite/Isaac-GR00T stack. [Baidu Netdisk (百度网盘)](https://pan.baidu.com/s/1Zyg2i_3tMp249PPLK6_JAw?pwd=ztcp)
 
 **LIBERO-Pro + Pi0.5**
 
@@ -165,6 +147,8 @@ python -m robocasa.scripts.setup_macros              # set up system variables
 python -m robocasa.scripts.download_kitchen_assets   # downloads ~10GB of kitchen assets
 ```
 
+### RoboTwin 2.0 environment
+
 **RoboTwin 2.0 + Pi0.5**
 
 RoboTwin is SAPIEN-based and cannot share a venv with either track above. Use the
@@ -185,19 +169,69 @@ docker run --rm --gpus all --shm-size 32g \
 ```
 
 The image ships three venvs under `/opt/venv/`; this repository uses `openpi`.
+`assets_path` must point at the RoboTwin repository root, not its `assets/`
+subdirectory.
+
+<details>
+<summary><b>Why these environment variables?</b></summary>
+
 The three environment variables let a CUDA 12.8 image run on a 12.4 driver:
 `NVIDIA_DISABLE_REQUIRE` skips the image's `cuda>=12.8` label check,
 `NVIDIA_DRIVER_CAPABILITIES` drops the `display` capability that needs a
 `/dev/nvidia-modeset` a headless host does not have, and `LD_LIBRARY_PATH` puts
 the host driver's `libcuda` ahead of the image's forward-compatibility libraries
--- CUDA forward compatibility is datacenter-only and fails on GeForce with
-`Error 804`. `assets_path` must point at the RoboTwin repository root, not its
-`assets/` subdirectory.
+— CUDA forward compatibility is datacenter-only and fails on GeForce with
+`Error 804`.
 
-Prebuilt Docker images, built from `scripts/deployment/Dockerfile.vla-env`, are available for both tracks so you can skip the manual venv build:
+</details>
 
-- **LIBERO-Pro** image: preconfigured with the LIBERO-Pro simulator stack and Pi0.5 dependencies. [百度网盘](https://pan.baidu.com/s/1HW7AstjCLE_BTScRFOQT2g?pwd=qv7c)
-- **RoboCasa** image: preconfigured with the RoboCasa/robosuite/Isaac-GR00T stack. [百度网盘](https://pan.baidu.com/s/1Zyg2i_3tMp249PPLK6_JAw?pwd=ztcp)
+### Genie Sim / Isaac Sim environment
+
+The native `geniesim` Runtime backend supports the RoboColiseum
+`g2op_if_pick_block_color` task with Isaac Sim 5.1 and an isolated Python 3.11
+simulator process. Use [prepare_geniesim.py](scripts/deployment/prepare_geniesim.py)
+to prepare pinned dependencies and task assets, then run
+[smoke_geniesim.py](scripts/deployment/smoke_geniesim.py) to validate reset,
+joint control, RGB observations, official scoring, and shutdown.
+The `geniesim_vla` backend adds the G2 CoRobot WebSocket policy protocol, and
+`prepare_geniesim_campaign.py` freezes VLA rollout and candidate gate commands.
+See [Genie Sim VLA and Campaign](docs/geniesim-vla.md) for the model-service
+contract, deployment, evidence, and current single-task limits.
+
+### ManiSkill environment
+
+The native Panda / `PickCube-v1` integration adds explicit observation/action
+contracts, official scoring, reproducible resets and a single-GPU Ray smoke preset.
+See [ManiSkill deployment and contracts](docs/maniskill.md) for installation,
+validation and frozen rollout/campaign configuration. Real VLA and campaign
+validation requires a matching native PickCube checkpoint and normalization stats.
+
+### BEHAVIOR environment
+
+The `behavior` Runtime backend drives a single R1Pro agent in an OmniGibson
+`BehaviorTask`. It exposes the BEHAVIOR policy contract (224px RGB, two wrist
+views, full R1Pro proprioception, and 23-dimensional actions) and keeps
+OmniGibson/BDDL optional so the simulator-free test environment remains usable.
+See [BEHAVIOR / OmniGibson](docs/behavior.md) for details.
+
+<details>
+<summary><b>Installation steps</b></summary>
+
+Install the repository's lightweight extra first:
+
+```bash
+python -m pip install -e ".[behavior]"
+```
+
+Then install the matching OmniGibson and BDDL checkouts from their upstream
+repositories and download the BEHAVIOR assets separately. Set
+`env_config.activity_name`, `scene_model`, and `env_config.env_factory` in
+`rollout_runtime/config/presets/behavior_pi05.yaml` for the selected checkout.
+Use `scripts/deployment/smoke_behavior.py` to verify import, reset, one step,
+and close before starting a VLA rollout. Model weights and simulator assets are
+external artifacts and are not included in this repository.
+
+</details>
 
 ## Runtime Rollout System
 
@@ -212,21 +246,14 @@ python -m rollout_runtime.cli serve \
   --launch ray
 ```
 
-`--launch ray` is required for real hardware runs: it puts the EnvWorker (simulator) and RolloutWorker (model inference) groups into separate processes. `--launch local` (the default) keeps them in one process and is only for local/CI smoke tests. Presets live under `rollout_runtime/config/presets/`; copy and edit one for machine-specific GPU/checkpoint paths rather than committing a new preset with real paths.
+> [!WARNING]
+> `--launch ray` is required for real hardware runs: it puts the EnvWorker (simulator) and RolloutWorker (model inference) groups into separate processes. `--launch local` (the default) keeps them in one process and is only for local/CI smoke tests.
+
+Presets live under `rollout_runtime/config/presets/`; copy and edit one for machine-specific GPU/checkpoint paths rather than committing a new preset with real paths.
 
 ## Preparing and Running a Campaign
 
-LIBERO, RoboCasa and RoboTwin all use the same two-step flow: `prepare_*_campaign.py` freezes a `manifest.json`/`tool-catalog.json` against a running runtime, then `run_campaign.py` drives the campaign state machine to completion.
-
-RoboTwin differs in two ways that its manifest records explicitly. Its seeds come
-from RoboTwin's curated per-task success-seed list rather than a dense integer
-range -- the environment picks its scene from the seed outright, so a held-out
-block drawn from unsolvable scenes would not be a gate -- and its evidence is
-chunk-granular rather than per-step, because it is the only `final_only` family.
-
-The RoboTwin campaign loop runs end to end on hardware: rollouts, Cluster,
-Diagnose, Stage 2, and the paired same-seed gate, over five candidate rounds to a
-`complete` campaign.
+LIBERO, RoboCasa, RoboTwin, Genie Sim and ManiSkill all use the same two-step flow: `prepare_*_campaign.py` freezes a `manifest.json`/`tool-catalog.json` against a running runtime, then `run_campaign.py` drives the campaign state machine to completion.
 
 ```bash
 # 1. Start the runtime (see above), then prepare the campaign against it.
@@ -255,13 +282,33 @@ python scripts/evolution/run_campaign.py \
   --queue-root runs/libero-goal-s-task3/queue \
   --tool-catalog runs/libero-goal-s-task3/g0000/tool-catalog.json \
   --workers libero-worker-0 \
-  --model gpt-5.6-sol \
+  --model <model-name> \
   --max-generations 1
 ```
 
+> [!NOTE]
+> Replace `<model-name>` with a model served by your Codex provider (see [LLM provider](#llm-provider)).
+> As of 2026/09/20, our experiments use `gpt-5.6-sol`; we will keep this updated as newer models are evaluated.
+
 `--worker-command` (optional, must be the final flag) overrides how each worker process is launched, substituting `{queue_root}`/`{host}` into a custom command template; omit it to use the default `zetta.evolution.cli worker` invocation.
 
-`--runtime-url`/`--runtime-policy-id` replace the legacy `--vla-endpoint`/`--environment-gpus` flags; RoboCasa campaigns always go through the runtime (there is no direct-connect path). `ROLLOUT_COUNT=50`, `HELDOUT_COUNT=20`, and the official horizons are the formal-run defaults; a quick infrastructure check may use 1/1/1 with a positive `CAMPAIGN_MAX_STEPS`, but that is not a benchmark result. Each preparation script's `--help` output is the authoritative option list.
+`--runtime-url`/`--runtime-policy-id` replace the legacy `--vla-endpoint`/`--environment-gpus` flags; RoboCasa campaigns always go through the runtime (there is no direct-connect path). `ROLLOUT_COUNT=50`, `HELDOUT_COUNT=20`, and the official horizons are the formal-run defaults. Each preparation script's `--help` output is the authoritative option list.
+
+> [!NOTE]
+> A quick infrastructure check may use 1/1/1 with a positive `CAMPAIGN_MAX_STEPS`, but that is not a benchmark result.
+
+> [!NOTE]
+> **RoboTwin** differs in two ways that its manifest records explicitly. Its seeds come
+> from RoboTwin's curated per-task success-seed list rather than a dense integer
+> range — the environment picks its scene from the seed outright, so a held-out
+> block drawn from unsolvable scenes would not be a gate — and its evidence is
+> chunk-granular rather than per-step, because it is the only `final_only` family.
+>
+> The RoboTwin campaign loop runs end to end on hardware: rollouts, Cluster,
+> Diagnose, Stage 2, and the paired same-seed gate, over five candidate rounds to a
+> `complete` campaign.
+
+### Inspecting a campaign
 
 To inspect a campaign read-only:
 
@@ -269,6 +316,39 @@ To inspect a campaign read-only:
 python -m zetta.evolution.cli status --root runs/libero-goal-s-task3/g0000 \
   --queue-root runs/libero-goal-s-task3/queue
 ```
+
+### Campaign root layout
+
+A campaign root normally contains:
+
+```text
+manifest.json             frozen task, schedule, runtime, and gate contract
+preregistration.json      seed and evaluation commitments
+task-contract.json        authoritative language goal, when supplied
+tool-catalog.json         exact tool schemas available to candidates
+state.json                current lifecycle phase
+episodes/                 canonical rollout and paired-gate records
+failure-clusters/         Cluster inputs, visual indices, and outputs
+diagnoses/                Stage 1 inputs, outputs, and audit trail
+proposals/                Stage 2 candidate attempts
+shadow-replay/            offline trigger and false-positive evidence
+gates/                    same-seed, regression, and held-out decisions
+promoted/                 verified candidate bundle and hashes
+```
+
+## Repository Layout
+
+| Path | Purpose |
+|---|---|
+| `zetta/evolution/` | Immutable manifests, queues, clustering, stages, gates, promotion, and supervision |
+| `rollout_runtime/` | The Rollout Runtime: Gateway, EnvWorker/RolloutWorker groups, and backends for LIBERO/RoboCasa/ManiSkill/BEHAVIOR/RoboTwin/Genie Sim |
+| `robots/libero/`, `robots/robocasa/`, `robots/robotwin/` | Env clients, Role1/Critic/Recovery, tools, and rendering contracts |
+| `robots/geniesim/`, `robots/maniskill/`, `robots/behavior/` | Environment contracts and rollout entrypoints |
+| `scripts/evolution/` | Campaign preparation, workers, capacity probes, and plots |
+| `scripts/deployment/` | Service start/stop, VLA env install, and Docker build helpers |
+| `tests/` | Unit/contract tests; the minimal set requires no simulator or model |
+
+Videos, model weights, simulator assets, API credentials, and host runtime files remain outside Git.
 
 ## Tests
 
@@ -293,7 +373,7 @@ Optional-backend tests require the corresponding dependencies; hardware/service 
 
 ## Acknowledgements
 
-We acknowledge [RLinf](https://github.com/RLinf/RLinf)  for its prior work. See [Third-Party Notices](./THIRD_PARTY_NOTICES.md) for details.
+We acknowledge [RLinf](https://github.com/RLinf/RLinf) for its prior work. See [Third-Party Notices](./THIRD_PARTY_NOTICES.md) for details.
 
 ## Citation
 
@@ -310,3 +390,7 @@ If you find Zetta useful in your research, please cite our paper:
       url={https://arxiv.org/abs/2608.16590}, 
 }
 ```
+
+## License
+
+Zetta is released under the [Apache-2.0 License](LICENSE). Portions adapted from RLinf and RPent retain their original attribution; see [Third-Party Notices](./THIRD_PARTY_NOTICES.md).
