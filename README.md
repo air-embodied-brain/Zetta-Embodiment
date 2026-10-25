@@ -294,7 +294,7 @@ Optional-backend tests require the corresponding dependencies; hardware/service 
 
 ## FlashRT Integration
 
-The `flashrt` policy backend (`rollout_runtime/backends/flashrt_policy.py`) serves Pi0.5 with FlashRT's FP8 + CUDA Graph kernels, including a batched `infer_batch` path.
+The `flashrt` policy backend (`rollout_runtime/backends/flashrt_policy.py`) serves Pi0.5 with FlashRT's FP8 + CUDA Graph kernels, including a batched `infer_batch` path. On a single RTX 4090 it cuts Pi0.5 single-sample latency 9.9× model-only (230.4 → 23.3 ms) and 4.5× through the gateway (271.3 → 60.5 ms), with 0.9989 action cosine similarity to the `zetta_openpi` baseline; see the [FlashRT performance report](docs/flashrt-report/flashrt-vs-zetta-openpi.md).
 
 1. **Install FlashRT** (no PyPI wheel; build locally with a CUDA toolchain, see [FlashRT](https://github.com/flashrt-project/FlashRT#build--install)), then `pip install -e ".[flashrt]"` for the torch glue.
 2. **Prepare the checkpoint:** `bash scripts/deployment/prepare_flashrt_ckpt.sh <openpi_ckpt_dir> <dst_dir>` lays out an openpi/RLinf Pi0.5 checkpoint the way FlashRT expects.

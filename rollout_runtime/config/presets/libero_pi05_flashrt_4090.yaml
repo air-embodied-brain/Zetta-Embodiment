@@ -1,7 +1,7 @@
 # LIBERO-Pro + FlashRT pi0.5 (FP8 + CUDA Graph), single-4090 gateway preset.
 #
-# Mirrors the FlashRT arm of the Z-Infra FlashRT report
-# (chunk_size 10). Run inside the FlashRT-enabled LIBERO env. Override the checkpoint
+# Mirrors the FlashRT arm of the FlashRT report
+# (docs/flashrt-report/flashrt-vs-zetta-openpi.md; chunk_size 10). Run inside the FlashRT-enabled LIBERO env. Override the checkpoint
 # / calibration paths at the CLI or edit the two paths below.
 
 env_family: libero
