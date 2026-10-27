@@ -350,3 +350,99 @@ def test_groot_has_no_compat_key_hard_constraints() -> None:
         )
         == {}
     )
+
+
+def test_flashrt_groot_backend_installs_the_graph_runner(
+    stub_policy: _FakePolicy, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from rollout_runtime.backends import flashrt_groot_n15
+
+    installed: list[Any] = []
+    monkeypatch.setattr(
+        flashrt_groot_n15,
+        "install_graph_runner",
+        lambda policy, *, max_graphs: installed.append((policy, max_graphs)) or "runner",
+    )
+    core = build_policy_core(
+        backend="flashrt_groot",
+        policy_config={
+            "groot_root": "/stub/groot",
+            "model_path": "/stub/checkpoint",
+            "max_graphs": 3,
+        },
+        device="cuda",
+        dtype="bfloat16",
+        action_dim=12,
+    )
+    core.load()
+    assert installed == [(stub_policy, 3)]
+    assert core.policy_family == "groot"
+    assert core.infer_batch([_request(0)])[0].error is None
+    core.close()
+
+
+def test_flashrt_groot_config_rejects_unknown_keys() -> None:
+    with pytest.raises(ValueError, match="unknown flashrt_groot policy_config keys"):
+        build_policy_core(
+            backend="flashrt_groot",
+            policy_config={"groot_root": "/x", "model_path": "/y", "bogus": 1},
+        )
+
+
+def test_flashrt_groot_config_rejects_non_positive_max_graphs() -> None:
+    with pytest.raises(ValueError, match="max_graphs must be >= 1"):
+        build_policy_core(
+            backend="flashrt_groot",
+            policy_config={"groot_root": "/x", "model_path": "/y", "max_graphs": 0},
+        )
+
+
+class _HookedPolicy:
+    """``Gr00tPolicy.get_action`` shape of robocasa-benchmark/Isaac-GR00T."""
+
+    def get_action(self, observations: dict[str, Any]) -> Any:
+        return self._get_action_from_normalized_input(observations)
+
+    def _get_action_from_normalized_input(self, normalized_input: dict[str, Any]) -> Any:
+        return normalized_input
+
+
+class _DiagnosticsPolicy:
+    """A fork whose ``get_action`` routes around ``_get_action_from_normalized_input``."""
+
+    def get_action(self, observations: dict[str, Any]) -> Any:
+        return self._get_action_and_diagnostics_from_normalized_input(observations)[0]
+
+    def _get_action_and_diagnostics_from_normalized_input(
+        self, normalized_input: dict[str, Any]
+    ) -> Any:
+        return normalized_input, {}
+
+    def _get_action_from_normalized_input(self, normalized_input: dict[str, Any]) -> Any:
+        return normalized_input
+
+
+def test_install_graph_runner_routes_the_hooked_policy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from types import SimpleNamespace
+
+    from rollout_runtime.backends import flashrt_groot_n15
+
+    monkeypatch.setattr(
+        flashrt_groot_n15,
+        "Gr00tN15GraphRunner",
+        lambda model, *, max_graphs: SimpleNamespace(get_action=lambda _: "graph"),
+    )
+    policy = _HookedPolicy()
+    policy.model = object()
+    runner = flashrt_groot_n15.install_graph_runner(policy, max_graphs=2)
+    assert policy.graph_runner is runner
+    assert policy.get_action({}) == "graph"
+
+
+def test_install_graph_runner_rejects_a_policy_that_bypasses_the_hook() -> None:
+    from rollout_runtime.backends import flashrt_groot_n15
+
+    with pytest.raises(RuntimeError, match="does not call _get_action_from_normalized_input"):
+        flashrt_groot_n15.install_graph_runner(_DiagnosticsPolicy(), max_graphs=2)
