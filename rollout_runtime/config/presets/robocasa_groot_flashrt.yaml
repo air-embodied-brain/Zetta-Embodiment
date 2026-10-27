@@ -1,0 +1,88 @@
+# RoboCasa PickPlaceCounterToStove + GR00T N1.5 on the FlashRT-style CUDA-Graph
+# backend (`flashrt_groot`). Same layout as robocasa_groot_dynamic.yaml; only the
+# policy backend differs.
+
+env_family: robocasa
+env_config:
+  task: PickPlaceCounterToStove
+  split: target
+  camera_size: 256
+  max_steps: 1000
+  require_isolated_renderer: false
+  process_isolation: true
+
+cluster:
+  num_nodes: 1
+  component_placement:
+    env:     {node_group: node, placement: "0:0"}
+    rollout: {placement: "0:0"}
+
+gateway:
+  gateway_epoch: 1
+  maintenance_interval_seconds: 1.0
+  default_lease_seconds: 1800.0
+  error_retention_seconds: 300.0
+  result_ttl_seconds: 300.0
+  heartbeat_timeout_seconds: 60.0
+  heartbeat_interval_seconds: 10.0
+  max_concurrency_per_rank: 4
+  metrics_namespace: rr
+
+transport:
+  kind: ray_channel
+  command_queue_size: 64
+  control_queue_size: 16
+  result_queue_size: 64
+  infer_request_queue_size: 16
+  infer_response_queue_size: 16
+  command_timeout_seconds: 600.0
+
+env_worker:
+  group_name: env
+  num_ranks: 1
+  placement_strategy: packed
+  # 动态扩容上限（served 模式下 ServeLimits.max_pool_size 的缺省来源，见 robocasa_groot_dynamic.yaml 文件头注释）。
+  max_sessions_per_rank: 4
+  # 启动时只冷启 1 个 slot；1->4 的其余 3 个由 add_slot 按需逐个追加。
+  default_pool_size: 1
+  seed_offset: 0
+
+rollout_worker:
+  group_name: rollout
+  num_ranks: 1
+  placement_strategy: packed
+  tensor_parallel_size: 1
+  pipeline_parallel_size: 1
+  policy_id: groot
+  policy_family: groot
+  policy_backend: flashrt_groot
+  device: cuda
+  dtype: bfloat16
+  max_concurrent_inferences: 1
+  policy_config:
+    groot_root: /path/to/Isaac-GR00T
+    model_path: /path/to/checkpoints/GR00T-PickPlaceCounterToStove-RoboCasa
+    data_config_name: panda_omron
+    embodiment_tag: new_embodiment
+    denoising_steps: 4
+    maximum_pending: 4
+    max_graphs: 16
+  scheduler:
+    max_batch_size: 1
+    max_wait_ms: 0.0
+    max_queue_depth: 16
+    max_inflight_per_application: 4
+    max_inflight_per_session: 1
+    fixed_batch_size: null
+
+admission:
+  require_auth: false
+  tokens: {}
+  max_sessions_per_application: 4
+  max_inflight_operations_per_application: 8
+  max_inflight_operations_per_session: 2
+  max_total_inflight_operations: 16
+
+payload:
+  inline_threshold_bytes: 262144
+  request_limit_bytes: 8388608
